@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { rawReturn } from 'mutative';
 import { bind, type Binder, type Options } from './bind';
 import type { Snapshot } from './bind';
 
@@ -25,9 +26,8 @@ export function createBinder<S extends Snapshot>(
 ): Binder<S> {
   const binder = bind<S>(source, options);
   binder.update(() => {
-    // Use type assertion to return the initial state
-    // This is safe because we're initializing the state
-    return initialState as any;
+    // Use rawReturn for performance when returning non-draft values
+    return rawReturn(initialState);
   });
   return binder;
 }
