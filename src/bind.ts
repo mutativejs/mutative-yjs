@@ -57,8 +57,7 @@ function applyYEvents<S extends Snapshot>(
   return create(snapshot, (target) => {
     for (const event of events) {
       const base = event.path.reduce((obj, step) => {
-        // @ts-ignore
-        return obj[step];
+        return (obj as Record<string, any>)[step];
       }, target);
 
       applyYEvent(base, event);
@@ -136,14 +135,22 @@ function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
 
 export type UpdateFn<S extends Snapshot> = (draft: S) => void;
 
+type PatchesOptions =
+  | true
+  | {
+      pathAsArray?: boolean;
+      arrayLengthAssignment?: boolean;
+    };
+
 function applyUpdate<S extends Snapshot>(
   source: Y.Map<any> | Y.Array<any>,
   snapshot: S,
   fn: UpdateFn<S>,
-  applyPatch: typeof defaultApplyPatch
+  applyPatch: typeof defaultApplyPatch,
+  patchesOptions: PatchesOptions
 ) {
   const [, patches] = create(snapshot, fn, {
-    enablePatches: true,
+    enablePatches: patchesOptions,
   });
   for (const patch of patches) {
     applyPatch(source, patch);
@@ -191,6 +198,11 @@ export type Options<S extends Snapshot> = {
     patch: Patch,
     applyPatch: typeof defaultApplyPatch
   ) => void;
+  /**
+   * Customize Mutative patches options.
+   * @param options The options that should be applied, please refer to 'Mutative' patches options documentation.
+   */
+  patchesOptions?: PatchesOptions;
 };
 
 /**
@@ -231,8 +243,20 @@ export function bind<S extends Snapshot>(
   const update = (fn: UpdateFn<S>) => {
     const doc = source.doc;
 
+    const patchesOptionsInOption = options
+      ? (options.patchesOptions ?? true)
+      : true;
+
+    if (
+      patchesOptionsInOption !== true &&
+      patchesOptionsInOption !== null &&
+      typeof patchesOptionsInOption !== 'object'
+    ) {
+      throw new Error('patchesOptions must be a boolean or an object');
+    }
+
     const doApplyUpdate = () => {
-      applyUpdate(source, get(), fn, applyPatch);
+      applyUpdate(source, get(), fn, applyPatch, patchesOptionsInOption);
     };
 
     if (doc) {
