@@ -15,29 +15,37 @@ export function isJSONObject(v: JSONValue): v is JSONObject {
     return !isJSONArray(v) && typeof v === 'object'
 }
 
-export function toYDataType(v: JSONValue) {
+export function toYDataType(v: JSONValue, seen = new WeakSet<object>()): any {
     if (isJSONPrimitive(v)) {
         return v
     } else if (isJSONArray(v)) {
+        if (seen.has(v)) {
+            throw new Error('Circular reference detected in JSON structure')
+        }
+        seen.add(v)
         const arr = new Y.Array()
-        applyJsonArray(arr, v)
+        applyJsonArray(arr, v, seen)
         return arr
     } else if (isJSONObject(v)) {
+        if (seen.has(v)) {
+            throw new Error('Circular reference detected in JSON structure')
+        }
+        seen.add(v)
         const map = new Y.Map()
-        applyJsonObject(map, v)
+        applyJsonObject(map, v, seen)
         return map
     } else {
         return undefined
     }
 }
 
-export function applyJsonArray(dest: Y.Array<unknown>, source: JSONArray) {
-    dest.push(source.map(toYDataType))
+export function applyJsonArray(dest: Y.Array<unknown>, source: JSONArray, seen = new WeakSet<object>()) {
+    dest.push(source.map((item) => toYDataType(item, seen)))
 }
 
-export function applyJsonObject(dest: Y.Map<unknown>, source: JSONObject) {
+export function applyJsonObject(dest: Y.Map<unknown>, source: JSONObject, seen = new WeakSet<object>()) {
     Object.entries(source).forEach(([k, v]) => {
-        dest.set(k, toYDataType(v))
+        dest.set(k, toYDataType(v, seen))
     })
 }
 
@@ -49,6 +57,6 @@ export function toPlainValue(v: Y.Map<any> | Y.Array<any> | JSONValue) {
     }
 }
 
-export function notImplemented() {
-    throw new Error('not implemented')
+export function notImplemented(reason: string): never {
+    throw new Error(`Not implemented: ${reason}`)
 }

@@ -136,6 +136,26 @@ const yMap = doc.getMap('myData');
 const binder = bind<MyDataType>(yMap);
 ```
 
+### `createBinder(source, initialState, options?)`
+
+Creates a binder with initial state in one call. This is a convenience function that combines `bind()` and initialization.
+
+**Parameters:**
+
+- `source`: `Y.Map<any> | Y.Array<any>` - The Yjs data type to bind
+- `initialState`: `S` - The initial state to set
+- `options?`: `Options<S>` - Optional configuration
+
+**Returns:** `Binder<S>` - A binder instance with the initial state applied
+
+**Example:**
+
+```typescript
+const doc = new Y.Doc();
+const yMap = doc.getMap('myData');
+const binder = createBinder(yMap, { count: 0, items: [] });
+```
+
 ### Binder API
 
 #### `binder.get()`
@@ -161,7 +181,7 @@ binder.update((state) => {
 });
 ```
 
-#### `binder.subscribe(fn)`
+#### `binder.subscribe(fn, options?)`
 
 Subscribes to state changes. The callback is invoked when:
 
@@ -171,13 +191,21 @@ Subscribes to state changes. The callback is invoked when:
 **Parameters:**
 
 - `fn`: `(snapshot: S) => void` - Callback function that receives the new snapshot
+- `options?`: `SubscribeOptions` - Optional subscription configuration
+  - `immediate?: boolean` - If true, calls the listener immediately with current snapshot
 
 **Returns:** `UnsubscribeFn` - A function to unsubscribe
 
 ```typescript
+// Basic subscription
 const unsubscribe = binder.subscribe((snapshot) => {
   console.log('State changed:', snapshot);
 });
+
+// Subscribe with immediate execution
+binder.subscribe((snapshot) => {
+  console.log('Current state:', snapshot);
+}, { immediate: true });
 
 // Later...
 unsubscribe();
@@ -470,6 +498,54 @@ interface Options<S extends Snapshot> {
 - **Transactions**: Updates are wrapped in Yjs transactions automatically for optimal performance
 - **Unsubscribe**: Always call `unbind()` when done to prevent memory leaks
 
+## Collaboration Semantics
+
+`mutative-yjs` implements smart collaboration semantics to preserve changes from multiple collaborators:
+
+### Array Element Replacement
+
+When replacing array elements with objects, the library performs **incremental updates** instead of delete+insert:
+
+```typescript
+// If both old and new values are objects
+binder.update((state) => {
+  state.items[0] = { ...state.items[0], name: 'Updated' };
+});
+// → Updates properties in-place, preserving other collaborators' changes
+```
+
+This prevents the "lost update" problem discussed in [immer-yjs#1](https://github.com/sep2/immer-yjs/issues/1).
+
+### Circular Update Protection
+
+The library uses transaction origins to prevent circular updates:
+
+```typescript
+const binder = bind(yMap);
+
+binder.subscribe((snapshot) => {
+  // Safe: won't cause infinite loop
+  if (snapshot.count < 10) {
+    binder.update((state) => {
+      state.count++;
+    });
+  }
+});
+```
+
+### Circular Reference Detection
+
+The library detects and rejects circular object references:
+
+```typescript
+const circular: any = { a: 1 };
+circular.self = circular;
+
+binder.update((state) => {
+  state.data = circular; // ❌ Throws: "Circular reference detected"
+});
+```
+
 ## Examples
 
 Check out the [test file](./test/indext.test.ts) for comprehensive examples including:
@@ -494,7 +570,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Related Projects
 
-- [Mutative](https://github.com/unadlibjs/mutative) - Efficient immutable updates with a mutable API
+- [Mutative](https://github.com/unadlib/mutative) - Efficient immutable updates with a mutable API
 - [Yjs](https://github.com/yjs/yjs) - A CRDT framework for building collaborative applications
 
 ## Acknowledgments

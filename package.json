@@ -1,7 +1,7 @@
 {
   "name": "mutative-yjs",
   "description": "A library for building Yjs collaborative web applications with Mutative",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "author": "unadlib",
   "repository": {
@@ -9,7 +9,8 @@
     "url": "https://github.com/mutativejs/mutative-yjs.git"
   },
   "source": "./src/index.ts",
-  "main": "./dist/index.esm.js",
+  "main": "./dist/index.cjs.js",
+  "module": "./dist/index.esm.js",
   "types": "./dist/index.d.ts",
   "unpkg": "./dist/index.umd.js",
   "exports": {

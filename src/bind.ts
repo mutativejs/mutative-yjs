@@ -12,6 +12,13 @@ import {
 
 export type Snapshot = JSONObject | JSONArray;
 
+/**
+ * Applies Yjs events to a base object.
+ * IMPORTANT: `base` must be a Mutative draft object. Direct mutations
+ * are safe only within a Mutative draft context.
+ * @param base The draft object to mutate (from Mutative's create)
+ * @param event The Yjs event describing the change
+ */
 function applyYEvent<T extends JSONValue>(base: T, event: Y.YEvent<any>) {
   if (event instanceof Y.YMapEvent && isJSONObject(base)) {
     const source = event.target as Y.Map<any>;
@@ -74,7 +81,7 @@ function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
 
   if (!path.length) {
     if (op !== PATCH_REPLACE) {
-      notImplemented();
+      notImplemented(`Cannot apply ${op} operation to root level`);
     }
 
     if (target instanceof Y.Map && isJSONObject(value)) {
@@ -84,9 +91,11 @@ function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
       }
     } else if (target instanceof Y.Array && isJSONArray(value)) {
       target.delete(0, target.length);
-      target.push(value.map(toYDataType));
+      target.push(value.map((v) => toYDataType(v)));
     } else {
-      notImplemented();
+      notImplemented(
+        `Cannot replace root of type ${target.constructor.name} with value type ${typeof value}`
+      );
     }
 
     return;
@@ -116,20 +125,39 @@ function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
         base.insert(property, [toYDataType(value)]);
         break;
       case PATCH_REPLACE:
-        base.delete(property);
-        base.insert(property, [toYDataType(value)]);
+        // If both old and new values are objects, try incremental update
+        // to preserve other collaborators' changes
+        const oldValue = base.get(property);
+        if (oldValue instanceof Y.Map && isJSONObject(value)) {
+          // Incremental update: update properties instead of replacing
+          oldValue.clear();
+          Object.entries(value).forEach(([k, v]) => {
+            oldValue.set(k, toYDataType(v));
+          });
+        } else {
+          // For primitives or type changes, do full replacement
+          base.delete(property, 1);
+          base.insert(property, [toYDataType(value)]);
+        }
         break;
       case PATCH_REMOVE:
-        base.delete(property);
+        base.delete(property, 1);
         break;
     }
   } else if (base instanceof Y.Array && property === 'length') {
     if (value < base.length) {
+      // Shrink array
       const diff = base.length - value;
       base.delete(value, diff);
+    } else if (value > base.length) {
+      // Expand array with null values
+      const toAdd = new Array(value - base.length).fill(null);
+      base.push(toAdd);
     }
   } else {
-    notImplemented();
+    notImplemented(
+      `Unsupported patch operation: ${op} on ${base?.constructor?.name ?? 'unknown'}.${String(property)}`
+    );
   }
 }
 
@@ -148,17 +176,26 @@ function applyUpdate<S extends Snapshot>(
   fn: UpdateFn<S>,
   applyPatch: typeof defaultApplyPatch,
   patchesOptions: PatchesOptions
-) {
-  const [, patches] = create(snapshot, fn, {
+): S {
+  const [nextState, patches] = create(snapshot, fn, {
     enablePatches: patchesOptions,
   });
   for (const patch of patches) {
     applyPatch(source, patch);
   }
+  return nextState;
 }
 
 export type ListenerFn<S extends Snapshot> = (snapshot: S) => void;
 export type UnsubscribeFn = () => void;
+
+export type SubscribeOptions = {
+  /**
+   * If true, the listener will be called immediately with the current snapshot.
+   * @default false
+   */
+  immediate?: boolean;
+};
 
 export type Binder<S extends Snapshot> = {
   /**
@@ -181,8 +218,10 @@ export type Binder<S extends Snapshot> = {
    * Subscribe to snapshot update, fired when:
    *   1. User called update(fn).
    *   2. y.js source.observeDeep() fired.
+   * @param fn Listener function that receives the new snapshot
+   * @param options Optional configuration for subscription behavior
    */
-  subscribe: (fn: ListenerFn<S>) => UnsubscribeFn;
+  subscribe: (fn: ListenerFn<S>, options?: SubscribeOptions) => UnsubscribeFn;
 };
 
 export type Options<S extends Snapshot> = {
@@ -210,6 +249,8 @@ export type Options<S extends Snapshot> = {
  * @param source The y.js data type to bind.
  * @param options Change default behavior, can be omitted.
  */
+const MUTATIVE_YJS_ORIGIN = Symbol('mutative-yjs');
+
 export function bind<S extends Snapshot>(
   source: Y.Map<any> | Y.Array<any>,
   options?: Options<S>
@@ -220,12 +261,18 @@ export function bind<S extends Snapshot>(
 
   const subscription = new Set<ListenerFn<S>>();
 
-  const subscribe = (fn: ListenerFn<S>) => {
+  const subscribe = (fn: ListenerFn<S>, options?: SubscribeOptions) => {
     subscription.add(fn);
+    if (options?.immediate) {
+      fn(get());
+    }
     return () => void subscription.delete(fn);
   };
 
-  const observer = (events: Y.YEvent<any>[]) => {
+  const observer = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
+    // Skip events originated from this binder to prevent circular updates
+    if (transaction.origin === MUTATIVE_YJS_ORIGIN) return;
+
     snapshot = applyYEvents(get(), events);
     subscription.forEach((fn) => fn(get()));
   };
@@ -256,13 +303,17 @@ export function bind<S extends Snapshot>(
     }
 
     const doApplyUpdate = () => {
-      applyUpdate(source, get(), fn, applyPatch, patchesOptionsInOption);
+      snapshot = applyUpdate(source, get(), fn, applyPatch, patchesOptionsInOption);
     };
 
     if (doc) {
-      Y.transact(doc, doApplyUpdate);
+      Y.transact(doc, doApplyUpdate, MUTATIVE_YJS_ORIGIN);
+      // Notify subscribers after transaction since observer skips our origin
+      subscription.forEach((fn) => fn(get()));
     } else {
+      // Without doc, manually update snapshot and notify subscribers
       doApplyUpdate();
+      subscription.forEach((fn) => fn(get()));
     }
   };
 

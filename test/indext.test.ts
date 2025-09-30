@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import * as Y from 'yjs';
+import { rawReturn } from 'mutative';
 
 import { bind } from '../src';
 import { createSampleObject, id1, id2, id3 } from './sample-data';
@@ -19,7 +20,7 @@ test('bind usage demo', () => {
 
   // initialize document with sample data
   binder.update(() => {
-    return initialObj;
+    return rawReturn(initialObj);
   });
 
   // snapshot reference should not change if no update
@@ -160,7 +161,7 @@ test('customize applyPatch', () => {
     },
   });
 
-  binder.update(() => initialObj);
+  binder.update(() => rawReturn(initialObj));
 
   expect(binder.get()).toStrictEqual(initialObj);
 
@@ -271,5 +272,219 @@ describe('array splice', () => {
     expect(result[1]).toBe(6);
     expect(result[2]).toBe(3);
     expect(result[3]).toBe(4);
+  });
+});
+
+describe('subscription', () => {
+  test('should trigger subscription on update', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ count: number }>(map);
+
+    let callCount = 0;
+    let receivedSnapshot: any = null;
+
+    const unsubscribe = binder.subscribe((snapshot) => {
+      callCount++;
+      receivedSnapshot = snapshot;
+    });
+
+    binder.update((state) => {
+      state.count = 10;
+    });
+
+    expect(callCount).toBe(1);
+    expect(receivedSnapshot).toEqual({ count: 10 });
+
+    binder.update((state) => {
+      state.count = 20;
+    });
+
+    expect(callCount).toBe(2);
+    expect(receivedSnapshot).toEqual({ count: 20 });
+
+    unsubscribe();
+
+    binder.update((state) => {
+      state.count = 30;
+    });
+
+    // Should not trigger after unsubscribe
+    expect(callCount).toBe(2);
+  });
+
+  test('should trigger subscription on Yjs changes', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ count: number }>(map);
+
+    let callCount = 0;
+    binder.subscribe(() => {
+      callCount++;
+    });
+
+    // Direct Yjs mutation
+    map.set('count', 42);
+
+    expect(callCount).toBe(1);
+    expect(binder.get()).toEqual({ count: 42 });
+  });
+
+  test('should support multiple subscribers', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ count: number }>(map);
+
+    let count1 = 0;
+    let count2 = 0;
+
+    const unsub1 = binder.subscribe(() => { count1++; });
+    const unsub2 = binder.subscribe(() => { count2++; });
+
+    binder.update((state) => {
+      state.count = 1;
+    });
+
+    expect(count1).toBe(1);
+    expect(count2).toBe(1);
+
+    unsub1();
+
+    binder.update((state) => {
+      state.count = 2;
+    });
+
+    expect(count1).toBe(1); // No longer called
+    expect(count2).toBe(2);
+
+    unsub2();
+  });
+});
+
+describe('collaborative editing', () => {
+  test('should reflect direct Yjs mutations across binders', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+
+    const binder1 = bind<{ count: number }>(map);
+    const binder2 = bind<{ count: number }>(map);
+
+    // Direct Yjs mutation (simulating remote update)
+    map.set('count', 42);
+
+    // Both binders should see the change
+    expect(binder1.get().count).toBe(42);
+    expect(binder2.get().count).toBe(42);
+
+    // Another direct mutation
+    map.set('count', 100);
+
+    expect(binder1.get().count).toBe(100);
+    expect(binder2.get().count).toBe(100);
+  });
+
+  test('should not cause circular updates', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ count: number }>(map);
+
+    let updateCount = 0;
+
+    binder.subscribe((snapshot) => {
+      updateCount++;
+      // This should not trigger infinite loop
+      if (snapshot.count < 5) {
+        binder.update((state) => {
+          state.count = snapshot.count + 1;
+        });
+      }
+    });
+
+    binder.update((state) => {
+      state.count = 0;
+    });
+
+    // Should update: 0 -> 1 -> 2 -> 3 -> 4 -> 5
+    expect(updateCount).toBe(6);
+    expect(binder.get().count).toBe(5);
+  });
+});
+
+describe('edge cases', () => {
+  test('should handle null values', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ value: null | string }>(map);
+
+    binder.update((state) => {
+      state.value = null;
+    });
+
+    expect(binder.get().value).toBe(null);
+  });
+
+  test('should handle empty objects and arrays', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ obj: {}; arr: [] }>(map);
+
+    binder.update((state) => {
+      state.obj = {};
+      state.arr = [];
+    });
+
+    expect(binder.get()).toEqual({ obj: {}, arr: [] });
+  });
+
+  test('should handle deeply nested structures', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    type DeepType = { a: { b: { c: { d: number } } } };
+    const binder = bind<DeepType>(map);
+
+    binder.update((state) => {
+      state.a = { b: { c: { d: 42 } } };
+    });
+
+    expect(binder.get().a.b.c.d).toBe(42);
+
+    binder.update((state) => {
+      state.a.b.c.d = 100;
+    });
+
+    expect(binder.get().a.b.c.d).toBe(100);
+  });
+
+  test('should handle array with mixed types', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ mixed: any[] }>(map);
+
+    binder.update((state) => {
+      state.mixed = [1, 'two', true, null, { nested: 'object' }, [1, 2, 3]];
+    });
+
+    const result = binder.get().mixed;
+    expect(result[0]).toBe(1);
+    expect(result[1]).toBe('two');
+    expect(result[2]).toBe(true);
+    expect(result[3]).toBe(null);
+    expect(result[4]).toEqual({ nested: 'object' });
+    expect(result[5]).toEqual([1, 2, 3]);
+  });
+
+  test('should detect circular references', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<any>(map);
+
+    const circular: any = { a: 1 };
+    circular.self = circular;
+
+    expect(() => {
+      binder.update((state) => {
+        state.data = circular;
+      });
+    }).toThrow('Circular reference detected');
   });
 });
