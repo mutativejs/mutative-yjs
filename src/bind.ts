@@ -1,6 +1,5 @@
 import { type Patch, create } from 'mutative';
 import * as Y from 'yjs';
-
 import { JSONArray, JSONObject, JSONValue } from './types';
 import {
   isJSONArray,
@@ -303,7 +302,13 @@ export function bind<S extends Snapshot>(
     }
 
     const doApplyUpdate = () => {
-      snapshot = applyUpdate(source, get(), fn, applyPatch, patchesOptionsInOption);
+      snapshot = applyUpdate(
+        source,
+        get(),
+        fn,
+        applyPatch,
+        patchesOptionsInOption
+      );
     };
 
     if (doc) {
