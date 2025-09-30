@@ -16,6 +16,40 @@ A library for building Yjs collaborative web applications with Mutative.
 - 🚀 **Performance**: Efficient patch-based updates with structural sharing
 - 🔌 **Flexible**: Customizable patch application for advanced use cases
 - 📡 **Reactive**: Built-in subscription system for state changes
+- ⚡ **Explicit Transactions**: Updates to Y.js are batched in transactions, you control the boundary
+- 🪶 **Lightweight**: Simple, small codebase with no magic or vendor lock-in
+- 🎨 **Non-intrusive**: Always opt-in by nature (snapshots are just plain objects)
+
+## Why mutative-yjs?
+
+**Do:**
+
+```typescript
+// any operation supported by mutative
+binder.update((state) => {
+  state.nested[0].key = {
+    id: 123,
+    p1: 'a',
+    p2: ['a', 'b', 'c'],
+  };
+});
+```
+
+**Instead of:**
+
+```typescript
+Y.transact(state.doc, () => {
+  const val = new Y.Map();
+  val.set('id', 123);
+  val.set('p1', 'a');
+
+  const arr = new Y.Array();
+  arr.push(['a', 'b', 'c']);
+  val.set('p2', arr);
+
+  state.get('nested').get(0).set('key', val);
+});
+```
 
 ## Installation
 
@@ -159,6 +193,28 @@ binder.unbind();
 
 ## Advanced Usage
 
+### Structural Sharing
+
+Like Mutative, `mutative-yjs` provides efficient structural sharing. Unchanged parts of the state maintain the same reference, which is especially beneficial for React re-renders:
+
+```typescript
+const snapshot1 = binder.get();
+
+binder.update((state) => {
+  state.todos[0].done = true;
+});
+
+const snapshot2 = binder.get();
+
+// changed properties have new references
+snapshot1.todos !== snapshot2.todos;
+snapshot1.todos[0] !== snapshot2.todos[0];
+
+// unchanged properties keep the same reference
+snapshot1.todos[1] === snapshot2.todos[1];
+snapshot1.todos[2] === snapshot2.todos[2];
+```
+
 ### Custom Patch Application
 
 You can customize how Mutative patches are applied to Yjs data structures:
@@ -196,6 +252,8 @@ const binder = bind<MyDataType>(yMap, {
   },
 });
 ```
+
+Refer to [Mutative patches documentation](https://mutative.js.org/docs/patches) for more details about patches options.
 
 ### Working with Y.Array
 
@@ -251,6 +309,85 @@ function handleUserAction() {
   });
 }
 ```
+
+### Integration with React
+
+Use `useSyncExternalStoreWithSelector` for optimal React integration with selective subscriptions:
+
+```tsx
+import { bind } from 'mutative-yjs';
+import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/with-selector';
+import * as Y from 'yjs';
+
+// define state shape
+interface State {
+  todos: Array<{ id: string; text: string; done: boolean }>;
+  user: { name: string; email: string };
+}
+
+const doc = new Y.Doc();
+
+// define store
+const binder = bind<State>(doc.getMap('data'));
+
+// define a helper hook
+function useMutativeYjs<Selection>(selector: (state: State) => Selection) {
+  const selection = useSyncExternalStoreWithSelector(
+    binder.subscribe,
+    binder.get,
+    binder.get,
+    selector
+  );
+
+  return [selection, binder.update] as const;
+}
+
+// optionally set initial data
+binder.update((state) => {
+  state.todos = [];
+  state.user = { name: 'Guest', email: '' };
+});
+
+// use in component
+function TodoList() {
+  const [todos, update] = useMutativeYjs((s) => s.todos);
+
+  const addTodo = (text: string) => {
+    update((state) => {
+      state.todos.push({
+        id: Math.random().toString(),
+        text,
+        done: false,
+      });
+    });
+  };
+
+  const toggleTodo = (id: string) => {
+    update((state) => {
+      const todo = state.todos.find((t) => t.id === id);
+      if (todo) todo.done = !todo.done;
+    });
+  };
+
+  // will only rerender when 'todos' array changes
+  return (
+    <div>
+      {todos.map((todo) => (
+        <div key={todo.id} onClick={() => toggleTodo(todo.id)}>
+          {todo.text} {todo.done ? '✓' : '○'}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// when done
+binder.unbind();
+```
+
+### Integration with Other Frameworks
+
+Contributions welcome! Please submit sample code via PR for Vue, Svelte, Angular, or other frameworks.
 
 ## Utility Functions
 
@@ -367,6 +504,10 @@ This library bridges two powerful tools:
 - **Yjs** for CRDT-based conflict-free collaborative editing
 - **Mutative** for ergonomic and performant immutable state updates
 
+## Credits
+
+`immer-yjs` is inspired by `https://github.com/sep2/immer-yjs`.
+
 ## License
 
-MIT © [unadlib](https://github.com/unadlib)
+`mutative-yjs` is [MIT licensed](https://github.com/mutativejs/mutative-yjs/blob/main/LICENSE).
