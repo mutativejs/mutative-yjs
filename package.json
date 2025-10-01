@@ -1,7 +1,7 @@
 {
   "name": "mutative-yjs",
   "description": "A library for building Yjs collaborative web applications with Mutative",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "author": "unadlib",
   "repository": {
