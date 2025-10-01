@@ -115,6 +115,10 @@ binder.unbind();
 
 `Y.XmlElement` & `Y.Text` have no equivalent to JSON data types, so they are not supported by default. If you want to use them, please use the Y.js top-level type (e.g. `doc.getText("xxx")`) directly, or see **Customize binding & schema** section below.
 
+## Demo
+
+[Demo Playground](https://codesandbox.io/p/sandbox/fjrwk3)
+
 ## API Reference
 
 ### `bind(source, options?)`
