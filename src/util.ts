@@ -11,7 +11,7 @@ export function isJSONArray(v: JSONValue): v is JSONArray {
 }
 
 export function isJSONObject(v: JSONValue): v is JSONObject {
-    return !isJSONArray(v) && typeof v === 'object'
+    return v !== null && !isJSONArray(v) && typeof v === 'object'
 }
 
 export function toYDataType(v: JSONValue, seen = new WeakSet<object>()): any {

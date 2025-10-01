@@ -423,6 +423,26 @@ describe('edge cases', () => {
     expect(binder.get().value).toBe(null);
   });
 
+  test('should handle array element updated to null', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ items: Array<{ id: number } | null> }>(map);
+
+    binder.update((state) => {
+      state.items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    });
+
+    expect(binder.get().items).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+
+    // Update array element to null - this should not crash
+    binder.update((state) => {
+      state.items[1] = null;
+    });
+
+    expect(binder.get().items).toEqual([{ id: 1 }, null, { id: 3 }]);
+    expect(binder.get().items[1]).toBe(null);
+  });
+
   test('should handle empty objects and arrays', () => {
     const doc = new Y.Doc();
     const map = doc.getMap('data');
