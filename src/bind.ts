@@ -241,6 +241,13 @@ export type Options<S extends Snapshot> = {
    * @param options The options that should be applied, please refer to 'Mutative' patches options documentation.
    */
   patchesOptions?: PatchesOptions;
+  /**
+   * Additional transaction origins to skip in observeDeep, beyond the internal MUTATIVE_YJS_ORIGIN.
+   * Use when binder.update() is called inside an outer doc.transact() with a known origin —
+   * the nested Y.transact gets merged into the outer so observeDeep fires with the outer origin
+   * instead of MUTATIVE_YJS_ORIGIN.
+   */
+  skippedOrigins?: unknown[];
 };
 
 /**
@@ -271,6 +278,7 @@ export function bind<S extends Snapshot>(
   const observer = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
     // Skip events originated from this binder to prevent circular updates
     if (transaction.origin === MUTATIVE_YJS_ORIGIN) return;
+    if (options?.skippedOrigins?.includes(transaction.origin)) return;
 
     snapshot = applyYEvents(get(), events);
     subscription.forEach((fn) => fn(get()));
