@@ -383,6 +383,33 @@ describe('collaborative editing', () => {
     expect(binder2.get().count).toBe(100);
   });
 
+  test('should reflect binder updates across binders', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+
+    const binder1 = bind<{ count: number }>(map);
+    const binder2 = bind<{ count: number }>(map);
+
+    let binder1Calls = 0;
+    let binder2Calls = 0;
+    binder1.subscribe(() => {
+      binder1Calls++;
+    });
+    binder2.subscribe(() => {
+      binder2Calls++;
+    });
+
+    binder1.update((state) => {
+      state.count = 1;
+    });
+
+    expect(binder1Calls).toBe(1);
+    expect(binder2Calls).toBe(1);
+    expect(binder1.get()).toEqual({ count: 1 });
+    expect(binder2.get()).toEqual({ count: 1 });
+    expect(map.toJSON()).toEqual({ count: 1 });
+  });
+
   test('should not cause circular updates', () => {
     const doc = new Y.Doc();
     const map = doc.getMap('data');

@@ -328,13 +328,17 @@ export function bind<S extends Snapshot>(
   };
 
   const observer = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
-    // Skip events originated from this binder to prevent circular updates
-    if (transaction.origin === MUTATIVE_YJS_ORIGIN) return;
+    const isCurrentBinderUpdate = hasBinderUpdate(transaction, binder);
 
-    if (
-      hasBinderUpdate(transaction, binder) ||
-      skippedOrigins?.has(transaction.origin)
-    ) {
+    if (isCurrentBinderUpdate) {
+      if (transaction.origin !== MUTATIVE_YJS_ORIGIN) {
+        snapshot = source.toJSON() as S;
+        subscription.forEach((fn) => fn(get()));
+      }
+      return;
+    }
+
+    if (skippedOrigins?.has(transaction.origin)) {
       snapshot = source.toJSON() as S;
       subscription.forEach((fn) => fn(get()));
       return;
