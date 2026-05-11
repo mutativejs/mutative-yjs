@@ -464,6 +464,38 @@ describe('nested Yjs transactions', () => {
     expect(map.toJSON()).toEqual({ items: ['a'] });
   });
 
+  test('should preserve structural sharing for wrapped binder updates', () => {
+    const origin = {};
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{
+      changed: { value: number };
+      unchanged: { value: number };
+    }>(map);
+
+    binder.update((state) => {
+      state.changed = { value: 1 };
+      state.unchanged = { value: 1 };
+    });
+
+    const before = binder.get();
+
+    doc.transact(() => {
+      binder.update((state) => {
+        state.changed.value = 2;
+      });
+    }, origin);
+
+    const after = binder.get();
+    expect(after.changed).not.toBe(before.changed);
+    expect(after.unchanged).toBe(before.unchanged);
+    expect(after).toEqual({
+      changed: { value: 2 },
+      unchanged: { value: 1 },
+    });
+    expect(map.toJSON()).toEqual(after);
+  });
+
   test('should include direct Yjs writes from the same skipped-origin transaction', () => {
     const origin = {};
     const doc = new Y.Doc();

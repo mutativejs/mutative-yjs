@@ -71,6 +71,30 @@ function applyYEvents<S extends Snapshot>(
   });
 }
 
+function isJSONEqual(a: JSONValue, b: JSONValue): boolean {
+  if (a === b) return true;
+
+  if (isJSONArray(a) && isJSONArray(b)) {
+    if (a.length !== b.length) return false;
+    return a.every((item, index) => isJSONEqual(item, b[index]));
+  }
+
+  if (isJSONObject(a) && isJSONObject(b)) {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+
+    if (aKeys.length !== bKeys.length) return false;
+
+    return aKeys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(b, key) &&
+        isJSONEqual(a[key], b[key])
+    );
+  }
+
+  return false;
+}
+
 const PATCH_REPLACE = 'replace';
 const PATCH_ADD = 'add';
 const PATCH_REMOVE = 'remove';
@@ -327,19 +351,26 @@ export function bind<S extends Snapshot>(
     return () => void subscription.delete(fn);
   };
 
+  const reconcileSnapshotFromSource = () => {
+    const nextSnapshot = source.toJSON() as S;
+    if (!isJSONEqual(snapshot, nextSnapshot)) {
+      snapshot = nextSnapshot;
+    }
+  };
+
   const observer = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
     const isCurrentBinderUpdate = hasBinderUpdate(transaction, binder);
 
     if (isCurrentBinderUpdate) {
       if (transaction.origin !== MUTATIVE_YJS_ORIGIN) {
-        snapshot = source.toJSON() as S;
+        reconcileSnapshotFromSource();
         subscription.forEach((fn) => fn(get()));
       }
       return;
     }
 
     if (skippedOrigins?.has(transaction.origin)) {
-      snapshot = source.toJSON() as S;
+      reconcileSnapshotFromSource();
       subscription.forEach((fn) => fn(get()));
       return;
     }
