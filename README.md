@@ -287,6 +287,28 @@ const binder = bind<MyDataType>(yMap, {
 
 Refer to [Mutative patches documentation](https://mutative.js.org/docs/patches) for more details about patches options.
 
+### Custom Transaction Origins
+
+When `binder.update()` is wrapped in an outer Yjs transaction, Yjs uses the
+outer transaction origin. Pass that origin in `skippedOrigins` so the binder can
+reconcile from the final Yjs state without re-applying its own update events:
+
+```typescript
+const origin = {};
+const binder = bind<MyDataType>(yMap, {
+  skippedOrigins: new Set([origin]),
+});
+
+doc.transact(() => {
+  binder.update((state) => {
+    state.count++;
+  });
+}, origin);
+```
+
+`skippedOrigins` accepts an array or a `Set`. This is useful when integrating
+with Yjs APIs such as `UndoManager.trackedOrigins`.
+
 ### Working with Y.Array
 
 The library works with both `Y.Map` and `Y.Array`:
@@ -462,6 +484,7 @@ type Snapshot = JSONObject | JSONArray;
 type UpdateFn<S extends Snapshot> = (draft: S) => void;
 type ListenerFn<S extends Snapshot> = (snapshot: S) => void;
 type UnsubscribeFn = () => void;
+type SkippedOrigins = readonly unknown[] | ReadonlySet<unknown>;
 
 interface Binder<S extends Snapshot> {
   unbind: () => void;
@@ -482,6 +505,7 @@ interface Options<S extends Snapshot> {
         pathAsArray?: boolean;
         arrayLengthAssignment?: boolean;
       };
+  skippedOrigins?: SkippedOrigins;
 }
 ```
 
