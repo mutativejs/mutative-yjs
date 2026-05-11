@@ -306,13 +306,8 @@ function hasBinderUpdate(transaction: Y.Transaction, binder: object) {
   )?.has(binder);
 }
 
-function isReadonlySet(value: unknown): value is ReadonlySet<unknown> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as ReadonlySet<unknown>).has === 'function' &&
-    typeof (value as ReadonlySet<unknown>).forEach === 'function'
-  );
+function isSet(value: unknown): value is ReadonlySet<unknown> {
+  return Object.prototype.toString.call(value) === '[object Set]';
 }
 
 function normalizeSkippedOrigins(skippedOrigins: SkippedOrigins | undefined) {
@@ -324,7 +319,7 @@ function normalizeSkippedOrigins(skippedOrigins: SkippedOrigins | undefined) {
     return new Set(skippedOrigins);
   }
 
-  if (isReadonlySet(skippedOrigins)) {
+  if (isSet(skippedOrigins)) {
     return skippedOrigins;
   }
 

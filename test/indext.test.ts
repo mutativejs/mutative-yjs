@@ -869,4 +869,16 @@ describe('error handling', () => {
       });
     }).toThrow('skippedOrigins must be an array or a Set');
   });
+
+  test('should reject Map for skippedOrigins', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const origin = {};
+
+    expect(() => {
+      bind<{ count: number }>(map, {
+        skippedOrigins: new Map([[origin, true]]) as any,
+      });
+    }).toThrow('skippedOrigins must be an array or a Set');
+  });
 });
