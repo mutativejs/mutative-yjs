@@ -488,6 +488,22 @@ describe('nested Yjs transactions', () => {
     expect(binder2.get()).toEqual({ items: ['a'] });
     expect(map.toJSON()).toEqual({ items: ['a'] });
   });
+
+  test('should accept Set for skippedOrigins', () => {
+    const origin = {};
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ value?: number }>(map, {
+      skippedOrigins: new Set([origin]),
+    });
+
+    doc.transact(() => {
+      map.set('value', 1);
+    }, origin);
+
+    expect(binder.get()).toEqual({ value: 1 });
+    expect(map.toJSON()).toEqual({ value: 1 });
+  });
 });
 
 describe('edge cases', () => {
@@ -782,5 +798,16 @@ describe('error handling', () => {
         state.count = 1;
       });
     }).toThrow('patchesOptions must be a boolean or an object');
+  });
+
+  test('should reject invalid skippedOrigins', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+
+    expect(() => {
+      bind<{ count: number }>(map, {
+        skippedOrigins: {} as any,
+      });
+    }).toThrow('skippedOrigins must be an array or a Set');
   });
 });

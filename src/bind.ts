@@ -169,6 +169,8 @@ type PatchesOptions =
       arrayLengthAssignment?: boolean;
     };
 
+type SkippedOrigins = readonly unknown[] | ReadonlySet<unknown>;
+
 function applyUpdate<S extends Snapshot>(
   source: Y.Map<any> | Y.Array<any>,
   snapshot: S,
@@ -242,12 +244,13 @@ export type Options<S extends Snapshot> = {
    */
   patchesOptions?: PatchesOptions;
   /**
-   * Additional transaction origins to skip in observeDeep, beyond the internal MUTATIVE_YJS_ORIGIN.
-   * Use when binder.update() is called inside an outer doc.transact() with a known origin —
-   * the nested Y.transact gets merged into the outer so observeDeep fires with the outer origin
-   * instead of MUTATIVE_YJS_ORIGIN.
+   * Transaction origins whose Yjs events should be reconciled from the final
+   * Yjs state instead of applied incrementally.
+   * Use when binder.update() is called inside an outer doc.transact() with a
+   * known origin. The nested Y.transact gets merged into the outer transaction,
+   * so observeDeep fires with the outer origin instead of MUTATIVE_YJS_ORIGIN.
    */
-  skippedOrigins?: unknown[];
+  skippedOrigins?: SkippedOrigins;
 };
 
 /**
@@ -279,12 +282,38 @@ function hasBinderUpdate(transaction: Y.Transaction, binder: object) {
   )?.has(binder);
 }
 
+function isReadonlySet(value: unknown): value is ReadonlySet<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ReadonlySet<unknown>).has === 'function' &&
+    typeof (value as ReadonlySet<unknown>).forEach === 'function'
+  );
+}
+
+function normalizeSkippedOrigins(skippedOrigins: SkippedOrigins | undefined) {
+  if (skippedOrigins === undefined) {
+    return undefined;
+  }
+
+  if (Array.isArray(skippedOrigins)) {
+    return new Set(skippedOrigins);
+  }
+
+  if (isReadonlySet(skippedOrigins)) {
+    return skippedOrigins;
+  }
+
+  throw new Error('skippedOrigins must be an array or a Set');
+}
+
 export function bind<S extends Snapshot>(
   source: Y.Map<any> | Y.Array<any>,
   options?: Options<S>
 ): Binder<S> {
   let snapshot = source.toJSON() as S;
   const binder = {};
+  const skippedOrigins = normalizeSkippedOrigins(options?.skippedOrigins);
 
   const get = () => snapshot;
 
@@ -302,7 +331,10 @@ export function bind<S extends Snapshot>(
     // Skip events originated from this binder to prevent circular updates
     if (transaction.origin === MUTATIVE_YJS_ORIGIN) return;
 
-    if (hasBinderUpdate(transaction, binder)) {
+    if (
+      hasBinderUpdate(transaction, binder) ||
+      skippedOrigins?.has(transaction.origin)
+    ) {
       snapshot = source.toJSON() as S;
       subscription.forEach((fn) => fn(get()));
       return;
