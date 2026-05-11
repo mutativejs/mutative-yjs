@@ -410,6 +410,86 @@ describe('collaborative editing', () => {
   });
 });
 
+describe('nested Yjs transactions', () => {
+  test('should not re-apply binder updates wrapped in a custom origin transaction', () => {
+    const origin = {};
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ items: string[] }>(map);
+
+    binder.update((state) => {
+      state.items = [];
+    });
+
+    let callCount = 0;
+    binder.subscribe(() => {
+      callCount++;
+    });
+
+    doc.transact(() => {
+      binder.update((state) => {
+        state.items.push('a');
+      });
+    }, origin);
+
+    expect(callCount).toBe(1);
+    expect(binder.get()).toEqual({ items: ['a'] });
+    expect(map.toJSON()).toEqual({ items: ['a'] });
+  });
+
+  test('should include direct Yjs writes from the same skipped-origin transaction', () => {
+    const origin = {};
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ count?: number; other?: number }>(map, {
+      skippedOrigins: [origin],
+    });
+
+    const snapshots: Array<{ count?: number; other?: number }> = [];
+    binder.subscribe((snapshot) => {
+      snapshots.push(snapshot);
+    });
+
+    doc.transact(() => {
+      binder.update((state) => {
+        state.count = 1;
+      });
+      map.set('other', 2);
+    }, origin);
+
+    expect(snapshots).toEqual([{ count: 1, other: 2 }]);
+    expect(binder.get()).toEqual({ count: 1, other: 2 });
+    expect(map.toJSON()).toEqual({ count: 1, other: 2 });
+  });
+
+  test('should keep other binders synced when one binder updates in a skipped-origin transaction', () => {
+    const origin = {};
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder1 = bind<{ items: string[] }>(map, {
+      skippedOrigins: [origin],
+    });
+
+    binder1.update((state) => {
+      state.items = [];
+    });
+
+    const binder2 = bind<{ items: string[] }>(map, {
+      skippedOrigins: [origin],
+    });
+
+    doc.transact(() => {
+      binder1.update((state) => {
+        state.items.push('a');
+      });
+    }, origin);
+
+    expect(binder1.get()).toEqual({ items: ['a'] });
+    expect(binder2.get()).toEqual({ items: ['a'] });
+    expect(map.toJSON()).toEqual({ items: ['a'] });
+  });
+});
+
 describe('edge cases', () => {
   test('should handle null values', () => {
     const doc = new Y.Doc();

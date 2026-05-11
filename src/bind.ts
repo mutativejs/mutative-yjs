@@ -256,12 +256,35 @@ export type Options<S extends Snapshot> = {
  * @param options Change default behavior, can be omitted.
  */
 const MUTATIVE_YJS_ORIGIN = Symbol('mutative-yjs');
+const MUTATIVE_YJS_TRANSACTION_META = Symbol('mutative-yjs:transaction-meta');
+
+function markBinderUpdate(transaction: Y.Transaction, binder: object) {
+  let binders = transaction.meta.get(MUTATIVE_YJS_TRANSACTION_META) as
+    | Set<object>
+    | undefined;
+
+  if (!binders) {
+    binders = new Set();
+    transaction.meta.set(MUTATIVE_YJS_TRANSACTION_META, binders);
+  }
+
+  binders.add(binder);
+}
+
+function hasBinderUpdate(transaction: Y.Transaction, binder: object) {
+  return (
+    transaction.meta.get(MUTATIVE_YJS_TRANSACTION_META) as
+      | Set<object>
+      | undefined
+  )?.has(binder);
+}
 
 export function bind<S extends Snapshot>(
   source: Y.Map<any> | Y.Array<any>,
   options?: Options<S>
 ): Binder<S> {
   let snapshot = source.toJSON() as S;
+  const binder = {};
 
   const get = () => snapshot;
 
@@ -278,7 +301,12 @@ export function bind<S extends Snapshot>(
   const observer = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
     // Skip events originated from this binder to prevent circular updates
     if (transaction.origin === MUTATIVE_YJS_ORIGIN) return;
-    if (options?.skippedOrigins?.includes(transaction.origin)) return;
+
+    if (hasBinderUpdate(transaction, binder)) {
+      snapshot = source.toJSON() as S;
+      subscription.forEach((fn) => fn(get()));
+      return;
+    }
 
     snapshot = applyYEvents(get(), events);
     subscription.forEach((fn) => fn(get()));
@@ -320,9 +348,23 @@ export function bind<S extends Snapshot>(
     };
 
     if (doc) {
-      Y.transact(doc, doApplyUpdate, MUTATIVE_YJS_ORIGIN);
-      // Notify subscribers after transaction since observer skips our origin
-      subscription.forEach((fn) => fn(get()));
+      const isNestedTransaction =
+        (doc as unknown as { _transaction: Y.Transaction | null })
+          ._transaction !== null;
+
+      Y.transact(
+        doc,
+        (transaction) => {
+          markBinderUpdate(transaction, binder);
+          doApplyUpdate();
+        },
+        MUTATIVE_YJS_ORIGIN
+      );
+
+      if (!isNestedTransaction) {
+        // Notify subscribers after transaction since observer skips our origin
+        subscription.forEach((fn) => fn(get()));
+      }
     } else {
       // Without doc, manually update snapshot and notify subscribers
       doApplyUpdate();
