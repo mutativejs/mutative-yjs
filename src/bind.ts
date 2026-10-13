@@ -260,6 +260,176 @@ type PatchesOptions =
 
 type SkippedOrigins = readonly unknown[] | ReadonlySet<unknown>;
 
+type PatchPath = (string | number)[];
+
+function getIn(value: unknown, path: PatchPath): unknown {
+  let current = value;
+  for (const step of path) {
+    if (current === null || typeof current !== 'object') {
+      return undefined;
+    }
+    current = (current as Record<string | number, unknown>)[step];
+  }
+  return current;
+}
+
+function isArrayPatchOf(patch: Patch, parent: PatchPath) {
+  const path = patch.path as PatchPath;
+  const last = path[path.length - 1];
+  return (
+    path.length === parent.length + 1 &&
+    (typeof last === 'number' || last === 'length') &&
+    parent.every((step, index) => path[index] === step)
+  );
+}
+
+// Mutative describes the patches of an array element by element: after
+// shift(), every later element is replaced by the next one. Yjs would then
+// rewrite every later element, and lose the changes that other clients make
+// to them at the same time. When an array grows or shrinks, these patches are
+// replaced with the removal or insertion of the elements between the common
+// head and tail of the array, so that Yjs keeps the other elements.
+function compactArrayPatches(
+  run: Patch[],
+  parent: PatchPath,
+  previous: Snapshot,
+  next: Snapshot
+): Patch[] {
+  const oldArray = getIn(previous, parent);
+  const newArray = getIn(next, parent);
+  if (
+    !Array.isArray(oldArray) ||
+    !Array.isArray(newArray) ||
+    oldArray.length === newArray.length
+  ) {
+    return run;
+  }
+
+  const oldLength = oldArray.length;
+  const newLength = newArray.length;
+  // Mutative replaces elements, adds them past the old length, and removes
+  // them past the new length.
+  const replaced = new Set<number>();
+  let hasLengthPatch = false;
+  for (const patch of run) {
+    const step = patch.path[patch.path.length - 1];
+    if (patch.op === PATCH_REPLACE && typeof step === 'number') {
+      replaced.add(step);
+    } else if (patch.op === PATCH_REPLACE && step === 'length') {
+      hasLengthPatch = true;
+    } else if (
+      !(
+        patch.op === PATCH_ADD &&
+        typeof step === 'number' &&
+        step >= oldLength
+      ) &&
+      !(
+        patch.op === PATCH_REMOVE &&
+        typeof step === 'number' &&
+        step >= newLength
+      )
+    ) {
+      return run;
+    }
+  }
+  if (replaced.size === 0) {
+    return run;
+  }
+
+  // What Yjs holds at an old index once the patches of nested drafts, which
+  // come before those of the array, are applied.
+  const current = (index: number) =>
+    index < newLength && !replaced.has(index)
+      ? newArray[index]
+      : oldArray[index];
+
+  const minLength = Math.min(oldLength, newLength);
+  let start = 0;
+  while (start < minLength && current(start) === newArray[start]) {
+    start++;
+  }
+  let end = 0;
+  while (
+    end < minLength - start &&
+    current(oldLength - 1 - end) === newArray[newLength - 1 - end]
+  ) {
+    end++;
+  }
+
+  const removed = oldLength - start - end;
+  const inserted = newLength - start - end;
+  const common = Math.min(removed, inserted);
+  const patches: Patch[] = [];
+  for (let index = start; index < start + common; index++) {
+    if (current(index) !== newArray[index]) {
+      patches.push({
+        op: PATCH_REPLACE,
+        path: parent.concat(index),
+        value: newArray[index],
+      });
+    }
+  }
+  if (removed > inserted && end === 0) {
+    // Remove the tail as Mutative does.
+    if (hasLengthPatch) {
+      patches.push({
+        op: PATCH_REPLACE,
+        path: parent.concat('length'),
+        value: newLength,
+      });
+    } else {
+      for (let index = oldLength - 1; index >= newLength; index--) {
+        patches.push({ op: PATCH_REMOVE, path: parent.concat(index) });
+      }
+    }
+  } else if (removed > inserted) {
+    for (let count = common; count < removed; count++) {
+      patches.push({ op: PATCH_REMOVE, path: parent.concat(start + common) });
+    }
+  } else {
+    for (let index = start + common; index < start + inserted; index++) {
+      patches.push({
+        op: PATCH_ADD,
+        path: parent.concat(index),
+        value: newArray[index],
+      });
+    }
+  }
+  return patches;
+}
+
+function* toYjsPatches(patches: Patch[], previous: Snapshot, next: Snapshot) {
+  for (let index = 0; index < patches.length; ) {
+    const path = patches[index].path as PatchPath;
+    const last = path[path.length - 1];
+    if (typeof last !== 'number' && last !== 'length') {
+      yield patches[index];
+      index++;
+      continue;
+    }
+    // Mutative emits the patches of an array one after another.
+    const parent = path.slice(0, -1);
+    let end = index + 1;
+    while (end < patches.length && isArrayPatchOf(patches[end], parent)) {
+      end++;
+    }
+    yield* compactArrayPatches(
+      patches.slice(index, end),
+      parent,
+      previous,
+      next
+    );
+    index = end;
+  }
+}
+
+// Mutative writes a path as a JSON Pointer with `pathAsArray: false`.
+function toPathString(path: PatchPath) {
+  return path
+    .map((step) => `/${String(step).replace(/~/g, '~0').replace(/\//g, '~1')}`)
+    .join('');
+}
+
 function applyUpdate<S extends Snapshot>(
   source: Y.Map<any> | Y.Array<any>,
   snapshot: S,
@@ -267,12 +437,21 @@ function applyUpdate<S extends Snapshot>(
   applyPatch: typeof defaultApplyPatch,
   patchesOptions: PatchesOptions
 ): S {
+  // Array paths, which toYjsPatches() reads, are turned into strings after.
   const [nextState, patches] = create(snapshot, fn, {
-    enablePatches: patchesOptions,
+    enablePatches:
+      patchesOptions === true ? true : { ...patchesOptions, pathAsArray: true },
   });
+  const hasStringPaths =
+    patchesOptions !== true && patchesOptions?.pathAsArray === false;
   const nullifiedArrayItems = countNullifiedArrayItems();
-  for (const patch of patches) {
-    applyPatch(source, patch);
+  for (const patch of toYjsPatches(patches, snapshot, nextState)) {
+    applyPatch(
+      source,
+      hasStringPaths
+        ? { ...patch, path: toPathString(patch.path as PatchPath) }
+        : patch
+    );
   }
   // Yjs holds `undefined` array elements and holes as `null`, so the snapshot
   // does as well.

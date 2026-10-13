@@ -291,6 +291,11 @@ nested draft come before those of its parents.
 If `applyPatch` throws, `update()` throws the error, and the snapshot is read
 back from Y.js, which keeps the patches applied before the error.
 
+When an update inserts or removes array elements, as `shift()`, `unshift()` and
+`splice()` do, `applyPatch` receives patches that add or remove these elements
+instead of Mutative's patches that replace every later element. Applying them
+with Mutative's `apply()` still gives the new snapshot.
+
 ### Patches Options
 
 Configure how Mutative generates patches:
@@ -562,6 +567,20 @@ binder.update((state) => {
 ## Collaboration Semantics
 
 `mutative-yjs` implements smart collaboration semantics to preserve changes from multiple collaborators:
+
+### Array Insertions and Removals
+
+When an update inserts or removes array elements, as `shift()`, `unshift()` and
+`splice()` do, only these elements are inserted into or removed from the
+`Y.Array`. The Y.js types of the other elements stay in place, so the changes
+that other collaborators make to them at the same time are kept:
+
+```typescript
+binder.update((state) => {
+  state.todos.shift();
+});
+// → Removes the first element from the Y.Array, and keeps the others
+```
 
 ### Array Element Replacement
 

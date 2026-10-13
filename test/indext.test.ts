@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import * as Y from 'yjs';
-import { original, rawReturn } from 'mutative';
+import { apply, original, rawReturn, type Patch } from 'mutative';
 
 import { bind, createBinder } from '../src';
 import { createSampleObject, id1, id2, id3 } from './sample-data';
@@ -273,6 +273,212 @@ describe('array splice', () => {
     expect(result[1]).toBe(6);
     expect(result[2]).toBe(3);
     expect(result[3]).toBe(4);
+  });
+});
+
+describe('array insertions and removals', () => {
+  type Item = { id: number; name: string };
+
+  function prepareListDoc(length: number) {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const patches: Patch[] = [];
+    const binder = createBinder<{ list: Item[] }>(
+      map,
+      {
+        list: Array.from({ length }, (_, id) => ({ id, name: `item ${id}` })),
+      },
+      {
+        applyPatch: (target, patch, applyPatch) => {
+          patches.push(patch);
+          applyPatch(target, patch);
+        },
+      }
+    );
+    patches.length = 0;
+    const list = map.get('list') as Y.Array<Y.Map<any>>;
+    const deltas: unknown[] = [];
+    map.observeDeep((events) => {
+      for (const event of events) {
+        deltas.push(
+          event instanceof Y.YArrayEvent ? event.changes.delta : event.path
+        );
+      }
+    });
+    return { doc, map, list, binder, patches, deltas };
+  }
+
+  test('should remove the first element for shift()', () => {
+    const { map, list, binder, patches, deltas } = prepareListDoc(5);
+    const second = list.get(1);
+
+    binder.update((state) => {
+      state.list.shift();
+    });
+
+    expect(patches).toEqual([{ op: 'remove', path: ['list', 0] }]);
+    expect(deltas).toEqual([[{ delete: 1 }]]);
+    expect(list.get(0)).toBe(second);
+    expect(map.toJSON()).toEqual(binder.get());
+  });
+
+  test('should insert the first elements for unshift()', () => {
+    const { map, list, binder, patches, deltas } = prepareListDoc(5);
+    const first = list.get(0);
+
+    binder.update((state) => {
+      state.list.unshift({ id: 5, name: 'item 5' }, { id: 6, name: 'item 6' });
+    });
+
+    expect(patches).toEqual([
+      { op: 'add', path: ['list', 0], value: { id: 5, name: 'item 5' } },
+      { op: 'add', path: ['list', 1], value: { id: 6, name: 'item 6' } },
+    ]);
+    expect(deltas).toEqual([
+      [{ insert: [expect.any(Y.Map), expect.any(Y.Map)] }],
+    ]);
+    expect(list.get(2)).toBe(first);
+    expect(map.toJSON()).toEqual(binder.get());
+  });
+
+  test('should replace, remove and insert only the elements that splice() changes', () => {
+    const { map, list, binder, patches } = prepareListDoc(6);
+    const kept = [0, 4, 5].map((index) => list.get(index));
+
+    binder.update((state) => {
+      state.list.splice(1, 3, { id: 6, name: 'item 6' });
+    });
+
+    expect(patches).toEqual([
+      { op: 'replace', path: ['list', 1], value: { id: 6, name: 'item 6' } },
+      { op: 'remove', path: ['list', 2] },
+      { op: 'remove', path: ['list', 2] },
+    ]);
+    expect([0, 2, 3].map((index) => list.get(index))).toEqual(kept);
+    expect(map.toJSON()).toEqual(binder.get());
+  });
+
+  test('should keep a change that another client makes to a later element', () => {
+    const { doc, binder } = prepareListDoc(3);
+    const remoteDoc = new Y.Doc();
+    Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+    const remote = bind<{ list: Item[] }>(remoteDoc.getMap('data'));
+
+    remote.update((state) => {
+      state.list[1].name = 'renamed';
+    });
+    binder.update((state) => {
+      state.list.shift();
+    });
+    Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(remoteDoc));
+
+    const expected = {
+      list: [
+        { id: 1, name: 'renamed' },
+        { id: 2, name: 'item 2' },
+      ],
+    };
+    expect(binder.get()).toEqual(expected);
+    expect(remote.get()).toEqual(expected);
+  });
+
+  test('should sync random array changes', () => {
+    let seed = 42;
+    const random = (max: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return Math.floor((seed / 2147483648) * max);
+    };
+    let nextId = 0;
+    const createItem = () => ({ id: nextId++, count: 0, tags: [random(3)] });
+    type State = {
+      items: ReturnType<typeof createItem>[];
+      numbers: number[];
+    };
+
+    for (const patchesOptions of [
+      true,
+      { arrayLengthAssignment: false },
+      { pathAsArray: false },
+    ] as const) {
+      for (let round = 0; round < 100; round++) {
+        const doc = new Y.Doc();
+        const remoteDoc = new Y.Doc();
+        doc.on('update', (update: Uint8Array) =>
+          Y.applyUpdate(remoteDoc, update)
+        );
+        const patches: Patch[] = [];
+        const binder = createBinder<State>(
+          doc.getMap('data'),
+          {
+            items: Array.from({ length: random(8) }, createItem),
+            numbers: Array.from({ length: random(8) }, () => random(4)),
+          },
+          {
+            patchesOptions,
+            applyPatch: (target, patch, applyPatch) => {
+              patches.push(patch);
+              applyPatch(target, patch);
+            },
+          }
+        );
+        const remote = bind<State>(remoteDoc.getMap('data'));
+
+        for (let step = 0; step < 5; step++) {
+          const before = binder.get();
+          patches.length = 0;
+          binder.update((state) => {
+            for (let count = 0; count <= random(3); count++) {
+              const isItems = random(10) < 7;
+              const list: any[] = isItems ? state.items : state.numbers;
+              const create = () => (isItems ? createItem() : random(4));
+              const index = random(list.length);
+              switch (random(10)) {
+                case 0:
+                  list.shift();
+                  break;
+                case 1:
+                  list.unshift(create(), create());
+                  break;
+                case 2:
+                  list.pop();
+                  break;
+                case 3:
+                  list.splice(index, random(3), create());
+                  break;
+                case 4:
+                  list.reverse();
+                  break;
+                case 5:
+                  list.length = random(list.length + 1);
+                  break;
+                case 6:
+                  if (isItems && list.length) list[index].count++;
+                  break;
+                case 7:
+                  if (isItems && list.length) {
+                    const [item] = list.splice(index, 1);
+                    item.count++;
+                    list.splice(random(list.length + 1), 0, item);
+                  }
+                  break;
+                case 8:
+                  if (isItems && list.length) list[index].tags.unshift(0);
+                  break;
+                default:
+                  if (list.length) list[index] = create();
+              }
+            }
+          });
+
+          expect(doc.getMap('data').toJSON()).toEqual(binder.get());
+          expect(remote.get()).toEqual(binder.get());
+          expect(apply(JSON.parse(JSON.stringify(before)), patches)).toEqual(
+            binder.get()
+          );
+        }
+      }
+    }
   });
 });
 
