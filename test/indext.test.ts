@@ -394,6 +394,22 @@ describe('array insertions and removals', () => {
     expect(apply(before, patches)).toEqual(expected);
   });
 
+  test('should replace 0 with -0', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<{ list: number[] }>(map, { list: [0, 1, 2] });
+
+    binder.update((state) => {
+      state.list[0] = -0;
+      state.list.push(3);
+    });
+
+    expect(Object.is(binder.get().list[0], -0)).toBe(true);
+    expect(Object.is((map.get('list') as Y.Array<number>).get(0), -0)).toBe(
+      true
+    );
+  });
+
   test('should keep a change that another client makes to a later element', () => {
     const { doc, binder } = prepareListDoc(3);
     const remoteDoc = new Y.Doc();

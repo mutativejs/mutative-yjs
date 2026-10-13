@@ -350,15 +350,16 @@ function compactArrayPatches(
         ? CHANGED_ELEMENT
         : oldArray[index];
 
+  // As Mutative compares, so 0 and -0 differ and NaN equals itself.
   const minLength = Math.min(oldLength, newLength);
   let start = 0;
-  while (start < minLength && current(start) === newArray[start]) {
+  while (start < minLength && Object.is(current(start), newArray[start])) {
     start++;
   }
   let end = 0;
   while (
     end < minLength - start &&
-    current(oldLength - 1 - end) === newArray[newLength - 1 - end]
+    Object.is(current(oldLength - 1 - end), newArray[newLength - 1 - end])
   ) {
     end++;
   }
@@ -368,7 +369,7 @@ function compactArrayPatches(
   const common = Math.min(removed, inserted);
   const patches: Patch[] = [];
   for (let index = start; index < start + common; index++) {
-    if (current(index) !== newArray[index]) {
+    if (!Object.is(current(index), newArray[index])) {
       patches.push({
         op: PATCH_REPLACE,
         path: parent.concat(index),
