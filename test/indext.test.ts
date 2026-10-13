@@ -420,10 +420,13 @@ describe('array insertions and removals', () => {
   });
 
   test('should sync random array changes', () => {
+    // mulberry32
     let seed = 42;
     const random = (max: number) => {
-      seed = (seed * 1103515245 + 12345) % 2147483648;
-      return Math.floor((seed / 2147483648) * max);
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * max);
     };
     let nextId = 0;
     const createItem = () => ({ id: nextId++, count: 0, tags: [random(3)] });
@@ -437,17 +440,21 @@ describe('array insertions and removals', () => {
       { arrayLengthAssignment: false },
       { pathAsArray: false },
     ] as const) {
-      for (let round = 0; round < 100; round++) {
+      for (let round = 0; round < 200; round++) {
         const doc = new Y.Doc();
         const remoteDoc = new Y.Doc();
         doc.on('update', (update: Uint8Array) =>
           Y.applyUpdate(remoteDoc, update)
         );
         const patches: Patch[] = [];
+        // Arrays may hold an object at several indices.
+        const shared = [createItem(), createItem()];
         const binder = createBinder<State>(
           doc.getMap('data'),
           {
-            items: Array.from({ length: random(8) }, createItem),
+            items: Array.from({ length: random(8) }, () =>
+              random(2) ? shared[random(2)] : createItem()
+            ),
             numbers: Array.from({ length: random(8) }, () => random(4)),
           },
           {
@@ -464,12 +471,13 @@ describe('array insertions and removals', () => {
           const before = binder.get();
           patches.length = 0;
           binder.update((state) => {
-            for (let count = 0; count <= random(3); count++) {
+            const operations = 1 + random(3);
+            for (let count = 0; count < operations; count++) {
               const isItems = random(10) < 7;
               const list: any[] = isItems ? state.items : state.numbers;
               const create = () => (isItems ? createItem() : random(4));
               const index = random(list.length);
-              switch (random(10)) {
+              switch (random(12)) {
                 case 0:
                   list.shift();
                   break;
@@ -501,6 +509,14 @@ describe('array insertions and removals', () => {
                 case 8:
                   if (isItems && list.length) list[index].tags.unshift(0);
                   break;
+                case 9:
+                  if (list.length) list.push(list[index]);
+                  break;
+                case 10:
+                  if (list.length) {
+                    list.splice(random(list.length + 1), 0, list[index]);
+                  }
+                  break;
                 default:
                   if (list.length) list[index] = create();
               }
@@ -509,9 +525,7 @@ describe('array insertions and removals', () => {
 
           expect(doc.getMap('data').toJSON()).toEqual(binder.get());
           expect(remote.get()).toEqual(binder.get());
-          expect(apply(JSON.parse(JSON.stringify(before)), patches)).toEqual(
-            binder.get()
-          );
+          expect(apply(before, patches)).toEqual(binder.get());
         }
       }
     }
