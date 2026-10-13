@@ -1581,6 +1581,36 @@ describe('error handling', () => {
     expect(snapshots).toEqual([{ a: 1 }]);
   });
 
+  test('should throw the error of applying a patch when a subscriber throws', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ a?: number; b?: number }>(map, {
+      applyPatch: (target, patch, applyPatch) => {
+        if (patch.path[0] === 'b') {
+          throw new Error('rejected patch');
+        }
+        applyPatch(target, patch);
+      },
+    });
+
+    const snapshots: Array<{ a?: number; b?: number }> = [];
+    binder.subscribe(() => {
+      throw new Error('failed subscriber');
+    });
+    binder.subscribe((snapshot) => {
+      snapshots.push(snapshot);
+    });
+
+    expect(() => {
+      binder.update((state) => {
+        state.a = 1;
+        state.b = 2;
+      });
+    }).toThrow('rejected patch');
+
+    expect(snapshots).toEqual([{ a: 1 }]);
+  });
+
   test('should notify subscribers when Yjs throws after applying the update', () => {
     const doc = new Y.Doc();
     const map = doc.getMap('data');

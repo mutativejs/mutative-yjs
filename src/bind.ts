@@ -719,7 +719,13 @@ export function bind<S extends Snapshot>(
         // from Yjs after all of them, so read the snapshot back from Yjs.
         reconcileSnapshotFromSource();
         if (!isNestedTransaction && snapshot !== previousSnapshot) {
-          subscription.forEach((fn) => fn(get()));
+          subscription.forEach((fn) => {
+            try {
+              fn(get());
+            } catch {
+              // The error of the update is the one to throw.
+            }
+          });
         }
         throw error;
       }
