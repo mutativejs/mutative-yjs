@@ -61,6 +61,9 @@ yarn add mutative-yjs mutative yjs
 pnpm add mutative-yjs mutative yjs
 ```
 
+`mutative-yjs` requires Mutative 2. If you are upgrading from Mutative 1, see
+[Upgrading to Mutative 2](#upgrading-to-mutative-2).
+
 ## Quick Start
 
 ```typescript
@@ -294,7 +297,7 @@ const binder = bind<MyDataType>(yMap, {
 });
 ```
 
-Refer to [Mutative patches documentation](https://mutative.js.org/docs/patches) for more details about patches options.
+Refer to [Mutative patches documentation](https://mutative.js.org/docs/advanced-guides/patches) for more details about patches options.
 
 ### Custom Transaction Origins
 
@@ -596,10 +599,42 @@ Check out the [test file](./test/indext.test.ts) for comprehensive examples incl
 
 ## Compatibility
 
-- **Mutative**: >= 1.0.0
+- **Mutative**: ^2.0.0
 - **Yjs**: >= 13.0.0
-- **TypeScript**: >= 4.5
+- **TypeScript**: >= 5.0, as required by the type declarations of Mutative 2
 - **Node.js**: >= 14
+- **Browsers**: engines with `Proxy` and ES2018 syntax, as required by Mutative 2
+
+## Upgrading to Mutative 2
+
+`mutative-yjs` declares `mutative@^2.0.0` as its peer dependency, so install
+Mutative 2 alongside it:
+
+```bash
+npm install mutative-yjs mutative@2 yjs
+```
+
+Mutative 2 keeps the API of Mutative 1, so calls to `bind()`, `createBinder()`
+and `binder.update()` need no changes. What changes for `mutative-yjs`:
+
+- **Correct patches.** Some recipes produced patches in Mutative 1 that left
+  the Y.js document out of sync with the snapshot, such as assigning a draft's
+  original object back to the key that holds the draft, which deleted the key
+  from Y.js. Mutative 2 fixes these patches.
+- **Custom `applyPatch`.** Patch values are now the objects of the new snapshot
+  instead of deep copies, and the patches of a nested draft come before those
+  of its parents. Never mutate a patch; see
+  [Custom Patch Application](#custom-patch-application).
+- **Faster array changes.** `shift()`, `unshift()`, `splice()` and `reverse()`
+  run natively on drafts, so Y.js array insertions and deletions, which the
+  binder applies to the snapshot with `splice()`, are much cheaper for large
+  arrays.
+- **Development and production builds.** Mutative 2 selects its build from
+  `process.env.NODE_ENV`, also when bundled as an ES module, and its production
+  build throws coded errors such as `Minified Mutative error #18`.
+
+The [Mutative 2 migration guide](https://mutative.js.org/docs/advanced-guides/migration-v2)
+lists every change since Mutative 1.3.0.
 
 ## Contributing
 
