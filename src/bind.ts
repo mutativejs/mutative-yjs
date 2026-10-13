@@ -418,14 +418,25 @@ export function bind<S extends Snapshot>(
         (doc as unknown as { _transaction: Y.Transaction | null })
           ._transaction !== null;
 
-      Y.transact(
-        doc,
-        (transaction) => {
-          markBinderUpdate(transaction, binder);
-          doApplyUpdate();
-        },
-        MUTATIVE_YJS_ORIGIN
-      );
+      try {
+        Y.transact(
+          doc,
+          (transaction) => {
+            markBinderUpdate(transaction, binder);
+            doApplyUpdate();
+          },
+          MUTATIVE_YJS_ORIGIN
+        );
+      } catch (error) {
+        // Yjs keeps the patches applied before the error, so read the
+        // snapshot back from Yjs to stay in sync with it.
+        const previousSnapshot = snapshot;
+        reconcileSnapshotFromSource();
+        if (!isNestedTransaction && snapshot !== previousSnapshot) {
+          subscription.forEach((fn) => fn(get()));
+        }
+        throw error;
+      }
 
       if (!isNestedTransaction) {
         // Notify subscribers after transaction since observer skips our origin

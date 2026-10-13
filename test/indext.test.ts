@@ -1125,4 +1125,56 @@ describe('error handling', () => {
       });
     }).toThrow('skippedOrigins must be an array or a Set');
   });
+
+  test('should sync the snapshot with Yjs when applying a patch throws', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ a?: number; b?: number }>(map, {
+      applyPatch: (target, patch, applyPatch) => {
+        if (patch.path[0] === 'b') {
+          throw new Error('rejected patch');
+        }
+        applyPatch(target, patch);
+      },
+    });
+
+    const snapshots: Array<{ a?: number; b?: number }> = [];
+    binder.subscribe((snapshot) => {
+      snapshots.push(snapshot);
+    });
+
+    expect(() => {
+      binder.update((state) => {
+        state.a = 1;
+        state.b = 2;
+      });
+    }).toThrow('rejected patch');
+
+    expect(map.toJSON()).toEqual({ a: 1 });
+    expect(binder.get()).toEqual({ a: 1 });
+    expect(snapshots).toEqual([{ a: 1 }]);
+  });
+
+  test('should keep the snapshot when the recipe throws', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<{ count: number }>(map, { count: 1 });
+    const before = binder.get();
+
+    let callCount = 0;
+    binder.subscribe(() => {
+      callCount++;
+    });
+
+    expect(() => {
+      binder.update((state) => {
+        state.count = 2;
+        throw new Error('failed recipe');
+      });
+    }).toThrow('failed recipe');
+
+    expect(binder.get()).toBe(before);
+    expect(map.toJSON()).toEqual({ count: 1 });
+    expect(callCount).toBe(0);
+  });
 });

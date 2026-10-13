@@ -286,6 +286,9 @@ where `transform` returns a new value.
 Patches arrive in the order that Mutative generates them: the patches of a
 nested draft come before those of its parents.
 
+If `applyPatch` throws, `update()` throws the error, and the snapshot is read
+back from Y.js, which keeps the patches applied before the error.
+
 ### Patches Options
 
 Configure how Mutative generates patches:
