@@ -6,6 +6,7 @@ import {
   isJSONArray,
   isJSONObject,
   notImplemented,
+  toPathArray,
   toPlainValue,
   toYArrayItem,
   toYDataType,
@@ -105,8 +106,18 @@ const PATCH_REPLACE = 'replace';
 const PATCH_ADD = 'add';
 const PATCH_REMOVE = 'remove';
 
+// The steps of a string path are strings, also for array indices.
+function toYKey(base: unknown, step: string | number) {
+  return base instanceof Y.Array &&
+    typeof step === 'string' &&
+    step !== 'length'
+    ? Number(step)
+    : step;
+}
+
 function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
-  const { path, op, value } = patch;
+  const { op, value } = patch;
+  const path = toPathArray(patch.path);
 
   if (!path.length) {
     if (op !== PATCH_REPLACE) {
@@ -132,11 +143,11 @@ function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
 
   let base = target;
   for (let i = 0; i < path.length - 1; i++) {
-    const step = path[i];
+    const step = toYKey(base, path[i]);
     base = base.get(step as never);
   }
 
-  const property = path[path.length - 1];
+  const property = toYKey(base, path[path.length - 1]);
 
   if (base instanceof Y.Map && typeof property === 'string') {
     switch (op) {

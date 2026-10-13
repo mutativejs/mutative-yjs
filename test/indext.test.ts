@@ -1091,6 +1091,39 @@ describe('options and configuration', () => {
     expect(binder.get().count).toBe(20);
   });
 
+  test('should apply patches with string paths', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const paths: unknown[] = [];
+    const binder = createBinder<any>(
+      map,
+      { 'a/b': { '~c': 1 }, list: [{ id: 1 }, { id: 2 }, { id: 3 }] },
+      {
+        patchesOptions: { pathAsArray: false },
+        applyPatch: (target, patch, applyPatch) => {
+          paths.push(patch.path);
+          applyPatch(target, patch);
+        },
+      }
+    );
+
+    binder.update((state) => {
+      state['a/b']['~c'] = 2;
+      state.list[0].id = 10;
+      state.list.splice(1, 1);
+      state.list.push({ id: 4 });
+    });
+
+    const expected = {
+      'a/b': { '~c': 2 },
+      list: [{ id: 10 }, { id: 3 }, { id: 4 }],
+    };
+    expect(binder.get()).toEqual(expected);
+    expect(map.toJSON()).toEqual(expected);
+    expect(paths).toContain('/a~1b/~0c');
+    expect(paths).toContain('/list/0/id');
+  });
+
   test('should work with detached Y.Map (no document initially)', () => {
     // Create Y.Map, then attach to document
     const doc = new Y.Doc();

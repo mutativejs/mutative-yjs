@@ -86,6 +86,17 @@ export function toPlainValue(v: Y.Map<any> | Y.Array<any> | JSONValue): JSONValu
     }
 }
 
+// With `pathAsArray: false`, Mutative writes a patch path as a JSON Pointer.
+export function toPathArray(path: string | readonly (string | number)[]) {
+    if (typeof path !== 'string') {
+        return path
+    }
+    return path
+        .split('/')
+        .slice(1)
+        .map((step) => step.replace(/~1/g, '/').replace(/~0/g, '~'))
+}
+
 export function notImplemented(reason: string): never {
     throw new Error(`Not implemented: ${reason}`)
 }

@@ -304,6 +304,9 @@ const binder = bind<MyDataType>(yMap, {
 });
 ```
 
+With `pathAsArray: false`, a custom `applyPatch` receives JSON Pointer paths
+such as `/list/0`, which the default handler accepts as well.
+
 Refer to [Mutative patches documentation](https://mutative.js.org/docs/advanced-guides/patches) for more details about patches options.
 
 ### Custom Transaction Origins
