@@ -116,7 +116,7 @@ binder.unbind();
 
 `Y.Map` binds to plain object `{}`, `Y.Array` binds to plain array `[]`, and any level of nested `Y.Map`/`Y.Array` binds to nested plain JSON object/array respectively.
 
-`Y.Array` cannot hold `undefined`, so `undefined` array elements and holes are written to Y.js as `null`, as `JSON.stringify()` writes them.
+`Y.Array` cannot hold `undefined`, so `undefined` array elements and holes become `null` in Y.js and in the snapshot, as `JSON.stringify()` writes them.
 
 A `__proto__` key of a `Y.Map` becomes an own property of the snapshot object, as `JSON.parse()` makes it, and never replaces the prototype of the object.
 

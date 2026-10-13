@@ -968,10 +968,9 @@ describe('undefined array elements', () => {
       data.array.length = 3;
     });
 
-    expect(binder.get().array).toHaveLength(3);
-    expect(binder.get().array[0]).toBe(1);
-    expect(map.toJSON()).toEqual({ array: [1, null, null] });
-    expect(observer.get()).toEqual({ array: [1, null, null] });
+    expect(binder.get()).toStrictEqual({ array: [1, null, null] });
+    expect(map.toJSON()).toStrictEqual({ array: [1, null, null] });
+    expect(observer.get()).toStrictEqual({ array: [1, null, null] });
   });
 
   test('should write holes of an array that grows by assignment as null', () => {
@@ -981,9 +980,9 @@ describe('undefined array elements', () => {
       data.array[3] = 4;
     });
 
-    expect(binder.get().array).toHaveLength(4);
-    expect(map.toJSON()).toEqual({ array: [1, null, null, 4] });
-    expect(observer.get()).toEqual({ array: [1, null, null, 4] });
+    expect(binder.get()).toStrictEqual({ array: [1, null, null, 4] });
+    expect(map.toJSON()).toStrictEqual({ array: [1, null, null, 4] });
+    expect(observer.get()).toStrictEqual({ array: [1, null, null, 4] });
   });
 
   test('should write deleted and undefined elements as null', () => {
@@ -995,9 +994,9 @@ describe('undefined array elements', () => {
       data.array.push(undefined as any);
     });
 
-    expect(binder.get().array).toHaveLength(4);
-    expect(map.toJSON()).toEqual({ array: [null, null, 3, null] });
-    expect(observer.get()).toEqual({ array: [null, null, 3, null] });
+    expect(binder.get()).toStrictEqual({ array: [null, null, 3, null] });
+    expect(map.toJSON()).toStrictEqual({ array: [null, null, 3, null] });
+    expect(observer.get()).toStrictEqual({ array: [null, null, 3, null] });
   });
 
   test('should write the holes of an assigned array as null', () => {
@@ -1007,9 +1006,41 @@ describe('undefined array elements', () => {
       data.array = [1, , 3] as any;
     });
 
-    expect(binder.get().array).toHaveLength(3);
-    expect(map.toJSON()).toEqual({ array: [1, null, 3] });
-    expect(observer.get()).toEqual({ array: [1, null, 3] });
+    expect(binder.get()).toStrictEqual({ array: [1, null, 3] });
+    expect(map.toJSON()).toStrictEqual({ array: [1, null, 3] });
+    expect(observer.get()).toStrictEqual({ array: [1, null, 3] });
+  });
+
+  test('should keep sharing what the update did not change', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<any>(map, {
+      changed: { list: [{ id: 1 }, { id: 2 }] },
+      unchanged: { list: [{ id: 3 }] },
+    });
+    (map.get('changed') as Y.Map<any>).set('__proto__', 1);
+    const before = binder.get();
+
+    binder.update((state) => {
+      state.changed.list.length = 3;
+    });
+
+    const after = binder.get();
+    expect(after.unchanged).toBe(before.unchanged);
+    expect(after.changed.list[0]).toBe(before.changed.list[0]);
+    expect(after.changed.list).toStrictEqual([{ id: 1 }, { id: 2 }, null]);
+    expect(Object.getPrototypeOf(after.changed)).toBe(Object.prototype);
+    expect(after.changed['__proto__']).toBe(1);
+    expect(after).toEqual(bind<any>(map).get());
+  });
+
+  test('should write the holes of an initial state as null', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<any>(map, { nested: { array: [1, , 3] } });
+
+    expect(binder.get()).toStrictEqual({ nested: { array: [1, null, 3] } });
+    expect(map.toJSON()).toStrictEqual({ nested: { array: [1, null, 3] } });
   });
 });
 

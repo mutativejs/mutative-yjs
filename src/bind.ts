@@ -3,9 +3,11 @@ import * as Y from 'yjs';
 import { JSONArray, JSONObject, JSONValue } from './types';
 import {
   applyJsonArray,
+  countNullifiedArrayItems,
   isJSONArray,
   isJSONObject,
   notImplemented,
+  setOwnValue,
   toPathArray,
   toPlainValue,
   toYArrayItem,
@@ -100,6 +102,52 @@ function isJSONEqual(a: JSONValue, b: JSONValue): boolean {
   }
 
   return false;
+}
+
+// Replaces the `undefined` elements and holes of arrays with `null`, as Yjs
+// holds them. What the previous snapshot holds at the same place is skipped,
+// as snapshots never hold them.
+function nullifyArrayItems<T extends JSONValue>(
+  value: T,
+  previous: JSONValue | undefined
+): T {
+  if (value === previous || value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  if (isJSONArray(value)) {
+    const previousArray = Array.isArray(previous) ? previous : undefined;
+    let copy: JSONArray | undefined;
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i];
+      const next =
+        item === undefined ? null : nullifyArrayItems(item, previousArray?.[i]);
+      if (next !== item) {
+        copy ??= value.slice();
+        copy[i] = next;
+      }
+    }
+    return (copy ?? value) as T;
+  }
+
+  const object = value as JSONObject;
+  const previousObject =
+    previous !== undefined && isJSONObject(previous) ? previous : undefined;
+  let copy: JSONObject | undefined;
+  for (const key of Object.keys(object)) {
+    const item = object[key];
+    const next = nullifyArrayItems(item, previousObject?.[key]);
+    if (next !== item) {
+      if (!copy) {
+        copy = {};
+        for (const k of Object.keys(object)) {
+          setOwnValue(copy, k, object[k]);
+        }
+      }
+      setOwnValue(copy, key, next);
+    }
+  }
+  return (copy ?? value) as T;
 }
 
 const PATCH_REPLACE = 'replace';
@@ -222,10 +270,15 @@ function applyUpdate<S extends Snapshot>(
   const [nextState, patches] = create(snapshot, fn, {
     enablePatches: patchesOptions,
   });
+  const nullifiedArrayItems = countNullifiedArrayItems();
   for (const patch of patches) {
     applyPatch(source, patch);
   }
-  return nextState;
+  // Yjs holds `undefined` array elements and holes as `null`, so the snapshot
+  // does as well.
+  return countNullifiedArrayItems() === nullifiedArrayItems
+    ? nextState
+    : nullifyArrayItems(nextState, snapshot);
 }
 
 export type ListenerFn<S extends Snapshot> = (snapshot: S) => void;

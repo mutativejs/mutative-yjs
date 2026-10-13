@@ -42,11 +42,23 @@ export function toYDataType(v: JSONValue, ancestors = new WeakSet<object>()): an
     }
 }
 
+let nullifiedArrayItems = 0
+
 // Y.Array cannot hold `undefined`, so `undefined` elements and holes are
 // written as `null`, as JSON.stringify() writes them.
 export function toYArrayItem(v: JSONValue, ancestors?: WeakSet<object>): any {
     const item = toYDataType(v, ancestors)
-    return item === undefined ? null : item
+    if (item !== undefined) {
+        return item
+    }
+    nullifiedArrayItems += 1
+    return null
+}
+
+// The number of array items written as `null` so far, which tells whether a
+// snapshot may hold `undefined` where Yjs holds `null`.
+export function countNullifiedArrayItems() {
+    return nullifiedArrayItems
 }
 
 export function applyJsonArray(dest: Y.Array<unknown>, source: JSONArray, ancestors = new WeakSet<object>()) {
@@ -59,22 +71,28 @@ export function applyJsonObject(dest: Y.Map<unknown>, source: JSONObject, ancest
     })
 }
 
+// Assigning a `__proto__` key replaces the prototype, so it is defined as an
+// own property, as JSON.parse() makes it.
+export function setOwnValue(object: JSONObject, key: string, value: JSONValue) {
+    if (key === '__proto__') {
+        Object.defineProperty(object, key, {
+            value,
+            writable: true,
+            enumerable: true,
+            configurable: true,
+        })
+    } else {
+        object[key] = value
+    }
+}
+
 // Like toJSON() of Yjs types, except that a `__proto__` key becomes an own
-// property, as JSON.parse() makes it, instead of replacing the prototype.
+// property instead of replacing the prototype.
 export function toPlainValue(v: Y.Map<any> | Y.Array<any> | JSONValue): JSONValue {
     if (v instanceof Y.Map) {
         const object: JSONObject = {}
         v.forEach((value, key) => {
-            if (key === '__proto__') {
-                Object.defineProperty(object, key, {
-                    value: toPlainValue(value),
-                    writable: true,
-                    enumerable: true,
-                    configurable: true,
-                })
-            } else {
-                object[key] = toPlainValue(value)
-            }
+            setOwnValue(object, key, toPlainValue(value))
         })
         return object
     } else if (v instanceof Y.Array) {
