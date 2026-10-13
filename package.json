@@ -6,7 +6,7 @@
   "author": "unadlib",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mutativejs/mutative-yjs.git"
+    "url": "git+https://github.com/mutativejs/mutative-yjs.git"
   },
   "source": "./src/index.ts",
   "main": "./dist/index.cjs",
