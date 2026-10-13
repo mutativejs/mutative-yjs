@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import * as Y from 'yjs';
-import { rawReturn } from 'mutative';
+import { original, rawReturn } from 'mutative';
 
 import { bind, createBinder } from '../src';
 import { createSampleObject, id1, id2, id3 } from './sample-data';
@@ -272,6 +272,134 @@ describe('array splice', () => {
     expect(result[1]).toBe(6);
     expect(result[2]).toBe(3);
     expect(result[3]).toBe(4);
+  });
+});
+
+describe('moved drafts', () => {
+  type Job = { id: number; attempts: number };
+  type State = { queue: Job[]; current: Job | null; done: { jobs: Job[] } };
+
+  function prepareJobsDoc() {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<State>(map, {
+      queue: [0, 1, 2, 3].map((id) => ({ id, attempts: 0 })),
+      current: null,
+      done: { jobs: [] },
+    });
+    const remoteDoc = new Y.Doc();
+    Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+    const remote = bind<State>(remoteDoc.getMap('data'));
+    doc.on('update', (update: Uint8Array) => Y.applyUpdate(remoteDoc, update));
+    return { map, binder, remote };
+  }
+
+  function expectInSync(
+    { map, binder, remote }: ReturnType<typeof prepareJobsDoc>,
+    expected: State
+  ) {
+    expect(binder.get()).toEqual(expected);
+    expect(map.toJSON()).toEqual(expected);
+    expect(remote.get()).toEqual(expected);
+  }
+
+  test('should sync a changed draft that shift() and push() move', () => {
+    const context = prepareJobsDoc();
+    const before = context.binder.get();
+
+    context.binder.update((state) => {
+      const job = state.queue.shift()!;
+      job.attempts += 1;
+      state.queue.push(job);
+    });
+
+    expectInSync(context, {
+      queue: [
+        { id: 1, attempts: 0 },
+        { id: 2, attempts: 0 },
+        { id: 3, attempts: 0 },
+        { id: 0, attempts: 1 },
+      ],
+      current: null,
+      done: { jobs: [] },
+    });
+    expect(context.binder.get().queue[0]).toBe(before.queue[1]);
+    expect(context.binder.get().done).toBe(before.done);
+  });
+
+  test('should sync a changed draft that sort() moves', () => {
+    const context = prepareJobsDoc();
+
+    context.binder.update((state) => {
+      state.queue[0].attempts = 2;
+      state.queue.sort((a, b) => b.attempts - a.attempts || b.id - a.id);
+    });
+
+    expectInSync(context, {
+      queue: [
+        { id: 0, attempts: 2 },
+        { id: 3, attempts: 0 },
+        { id: 2, attempts: 0 },
+        { id: 1, attempts: 0 },
+      ],
+      current: null,
+      done: { jobs: [] },
+    });
+  });
+
+  test('should sync a changed draft that moves to another key', () => {
+    const context = prepareJobsDoc();
+
+    // Mutative 2 emits the patch of `queue` before the one of `current`.
+    context.binder.update((state) => {
+      const job = state.queue[0];
+      state.queue.length = 0;
+      job.attempts = 3;
+      state.current = job;
+    });
+
+    expectInSync(context, {
+      queue: [],
+      current: { id: 0, attempts: 3 },
+      done: { jobs: [] },
+    });
+  });
+
+  test('should sync a changed draft that moves into a nested array', () => {
+    const context = prepareJobsDoc();
+
+    context.binder.update((state) => {
+      const job = state.queue.shift()!;
+      job.attempts += 1;
+      state.done.jobs.push(job);
+    });
+
+    expectInSync(context, {
+      queue: [
+        { id: 1, attempts: 0 },
+        { id: 2, attempts: 0 },
+        { id: 3, attempts: 0 },
+      ],
+      current: null,
+      done: { jobs: [{ id: 0, attempts: 1 }] },
+    });
+  });
+
+  test('should sync the original object assigned over its changed draft', () => {
+    const context = prepareJobsDoc();
+    const before = context.binder.get();
+
+    // Mutative 1 emitted a remove patch for `current` here.
+    context.binder.update((state) => {
+      state.current = state.queue[0];
+    });
+    context.binder.update((state) => {
+      const current = original(state.current)!;
+      state.current!.attempts = 5;
+      state.current = current;
+    });
+
+    expectInSync(context, { ...before, current: { id: 0, attempts: 0 } });
   });
 });
 
