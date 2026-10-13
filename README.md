@@ -539,6 +539,17 @@ interface Options<S extends Snapshot> {
 - **Structural Sharing**: Unchanged parts of the state maintain referential equality, making React re-renders efficient
 - **Transactions**: Updates are wrapped in Yjs transactions automatically for optimal performance
 - **Unsubscribe**: Always call `unbind()` when done to prevent memory leaks
+- **Search Snapshots**: Inside `update()`, every element that a search such as `find()` reads through the draft becomes a draft. To search a large array, search a `current()` snapshot, which holds plain values at the draft's indices, and change the match through the draft
+- **Production Builds**: Define `process.env.NODE_ENV` as `'production'` in production bundles, as most bundlers do, so that Mutative leaves out its development checks
+
+```typescript
+import { current } from 'mutative';
+
+binder.update((state) => {
+  const index = current(state.todos).findIndex((todo) => todo.id === id);
+  if (index !== -1) state.todos[index].done = true;
+});
+```
 
 ## Collaboration Semantics
 
