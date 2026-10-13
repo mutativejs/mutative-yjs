@@ -254,7 +254,7 @@ You can customize how Mutative patches are applied to Yjs data structures:
 ```typescript
 const binder = bind<MyDataType>(yMap, {
   applyPatch: (target, patch, defaultApplyPatch) => {
-    // Inspect or modify the patch before applying
+    // Inspect the patch before applying
     console.log('Applying patch:', patch);
 
     // You can conditionally apply patches based on the path
@@ -271,6 +271,15 @@ const binder = bind<MyDataType>(yMap, {
   },
 });
 ```
+
+Patch values are the objects of the new snapshot, not copies, so never mutate
+`patch` or `patch.value`: a change would also show up in `binder.get()`. To
+write a different value to Yjs, pass a changed copy to the default handler,
+such as `defaultApplyPatch(target, { ...patch, value: transform(patch.value) })`
+where `transform` returns a new value.
+
+Patches arrive in the order that Mutative generates them: the patches of a
+nested draft come before those of its parents.
 
 ### Patches Options
 

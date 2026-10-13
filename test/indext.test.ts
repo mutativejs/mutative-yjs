@@ -155,7 +155,8 @@ test('customize applyPatch', () => {
     applyPatch: (target, patch, applyPatch) => {
       // you can inspect the patch.path and decide what to do with target
       // optionally delegate to the default patch handler
-      // (modify target/patch before delegating as you want)
+      // (pass a changed copy of the patch, never mutate patch.value,
+      // which holds the objects of the next snapshot)
       applyPatch(target, patch);
       // can also postprocessing after the default behavior is applied
     },

@@ -255,6 +255,8 @@ export type Options<S extends Snapshot> = {
   /**
    * Customize Mutative patch application.
    * Should apply patch to the target y.js data.
+   * The patch value holds the objects of the next snapshot, not copies, so
+   * never mutate the patch: pass a changed copy to `applyPatch` instead.
    * @param target The y.js data to be modified.
    * @param patch The patch that should be applied, please refer to 'Mutative' patch documentation.
    * @param applyPatch the default behavior to apply patch, call this to handle the normal case.
