@@ -1304,6 +1304,30 @@ describe('undefined array elements', () => {
     expect(observer.get()).toStrictEqual({ array: [1, null, 3] });
   });
 
+  test('should write undefined elements as null with a custom applyPatch', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<{ array: Array<number | null> }>(
+      map,
+      { array: [1] },
+      {
+        applyPatch: (target, patch, applyPatch) => {
+          applyPatch(
+            target,
+            patch.value === undefined ? { ...patch, value: null } : patch
+          );
+        },
+      }
+    );
+
+    binder.update((data) => {
+      data.array.push(undefined as any);
+    });
+
+    expect(binder.get()).toStrictEqual({ array: [1, null] });
+    expect(map.toJSON()).toStrictEqual({ array: [1, null] });
+  });
+
   test('should keep sharing what the update did not change', () => {
     const doc = new Y.Doc();
     const map = doc.getMap('data');

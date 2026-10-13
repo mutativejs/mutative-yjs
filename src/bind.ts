@@ -3,7 +3,6 @@ import * as Y from 'yjs';
 import { JSONArray, JSONObject, JSONValue } from './types';
 import {
   applyJsonArray,
-  countNullifiedArrayItems,
   isJSONArray,
   isJSONObject,
   notImplemented,
@@ -102,6 +101,37 @@ function isJSONEqual(a: JSONValue, b: JSONValue): boolean {
   }
 
   return false;
+}
+
+function holdsUndefinedArrayItem(
+  value: unknown,
+  ancestors = new WeakSet<object>()
+): boolean {
+  if (value === null || typeof value !== 'object' || ancestors.has(value)) {
+    return false;
+  }
+  ancestors.add(value);
+  const values = Array.isArray(value)
+    ? Array.from(value)
+    : Object.values(value);
+  const result = values.some(
+    (item) =>
+      (item === undefined && Array.isArray(value)) ||
+      holdsUndefinedArrayItem(item, ancestors)
+  );
+  ancestors.delete(value);
+  return result;
+}
+
+// Whether a patch writes an `undefined` array element or hole, which Yjs
+// holds as `null`.
+function writesUndefinedArrayItem(patch: Patch) {
+  const step = patch.path[patch.path.length - 1];
+  return (
+    (patch.op === PATCH_ADD || patch.op === PATCH_REPLACE) &&
+    ((patch.value === undefined && typeof step === 'number') ||
+      holdsUndefinedArrayItem(patch.value))
+  );
 }
 
 // Replaces the `undefined` elements and holes of arrays with `null`, as Yjs
@@ -477,8 +507,9 @@ function applyUpdate<S extends Snapshot>(
   });
   const hasStringPaths =
     patchesOptions !== true && patchesOptions?.pathAsArray === false;
-  const nullifiedArrayItems = countNullifiedArrayItems();
+  let hasUndefinedArrayItems = false;
   for (const patch of toYjsPatches(patches, snapshot, nextState)) {
+    hasUndefinedArrayItems ||= writesUndefinedArrayItem(patch);
     applyPatch(
       source,
       hasStringPaths
@@ -488,9 +519,9 @@ function applyUpdate<S extends Snapshot>(
   }
   // Yjs holds `undefined` array elements and holes as `null`, so the snapshot
   // does as well.
-  return countNullifiedArrayItems() === nullifiedArrayItems
-    ? nextState
-    : nullifyArrayItems(nextState, snapshot);
+  return hasUndefinedArrayItems
+    ? nullifyArrayItems(nextState, snapshot)
+    : nextState;
 }
 
 export type ListenerFn<S extends Snapshot> = (snapshot: S) => void;

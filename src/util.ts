@@ -44,23 +44,10 @@ export function toYDataType(v: JSONValue, ancestors = new WeakSet<object>()): an
     }
 }
 
-let nullifiedArrayItems = 0
-
 // Y.Array cannot hold `undefined`, so `undefined` elements and holes are
 // written as `null`, as JSON.stringify() writes them.
 export function toYArrayItem(v: JSONValue, ancestors?: WeakSet<object>): any {
-    const item = toYDataType(v, ancestors)
-    if (item !== undefined) {
-        return item
-    }
-    nullifiedArrayItems += 1
-    return null
-}
-
-// The number of array items written as `null` so far, which tells whether a
-// snapshot may hold `undefined` where Yjs holds `null`.
-export function countNullifiedArrayItems() {
-    return nullifiedArrayItems
+    return v === undefined ? null : toYDataType(v, ancestors)
 }
 
 export function applyJsonArray(dest: Y.Array<unknown>, source: JSONArray, ancestors = new WeakSet<object>()) {
