@@ -262,6 +262,8 @@ type SkippedOrigins = readonly unknown[] | ReadonlySet<unknown>;
 
 type PatchPath = (string | number)[];
 
+const CHANGED_ELEMENT = {};
+
 function getIn(value: unknown, path: PatchPath): unknown {
   let current = value;
   for (const step of path) {
@@ -293,7 +295,8 @@ function compactArrayPatches(
   run: Patch[],
   parent: PatchPath,
   previous: Snapshot,
-  next: Snapshot
+  next: Snapshot,
+  changedIndices: Set<number> | undefined
 ): Patch[] {
   const oldArray = getIn(previous, parent);
   const newArray = getIn(next, parent);
@@ -337,11 +340,15 @@ function compactArrayPatches(
   }
 
   // What Yjs holds at an old index once the patches of nested drafts, which
-  // come before those of the array, are applied.
+  // come before those of the array, are applied. When the array holds an
+  // object at several indices, such patches can change an element that the
+  // array patches replace or remove, which then matches no element.
   const current = (index: number) =>
     index < newLength && !replaced.has(index)
       ? newArray[index]
-      : oldArray[index];
+      : changedIndices?.has(index)
+        ? CHANGED_ELEMENT
+        : oldArray[index];
 
   const minLength = Math.min(oldLength, newLength);
   let start = 0;
@@ -399,11 +406,33 @@ function compactArrayPatches(
 }
 
 function* toYjsPatches(patches: Patch[], previous: Snapshot, next: Snapshot) {
+  // The indices of array elements that applied patches changed below, by the
+  // path of the array.
+  const changedIndices = new Map<string, Set<number>>();
+  function* track(patches: Patch[]) {
+    for (const patch of patches) {
+      const path = patch.path as PatchPath;
+      for (let step = 0; step < path.length - 1; step++) {
+        const index = path[step];
+        if (typeof index === 'number') {
+          const key = JSON.stringify(path.slice(0, step));
+          let indices = changedIndices.get(key);
+          if (!indices) {
+            indices = new Set();
+            changedIndices.set(key, indices);
+          }
+          indices.add(index);
+        }
+      }
+      yield patch;
+    }
+  }
+
   for (let index = 0; index < patches.length; ) {
     const path = patches[index].path as PatchPath;
     const last = path[path.length - 1];
     if (typeof last !== 'number' && last !== 'length') {
-      yield patches[index];
+      yield* track([patches[index]]);
       index++;
       continue;
     }
@@ -413,11 +442,14 @@ function* toYjsPatches(patches: Patch[], previous: Snapshot, next: Snapshot) {
     while (end < patches.length && isArrayPatchOf(patches[end], parent)) {
       end++;
     }
-    yield* compactArrayPatches(
-      patches.slice(index, end),
-      parent,
-      previous,
-      next
+    yield* track(
+      compactArrayPatches(
+        patches.slice(index, end),
+        parent,
+        previous,
+        next,
+        changedIndices.get(JSON.stringify(parent))
+      )
     );
     index = end;
   }

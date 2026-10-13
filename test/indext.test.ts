@@ -358,6 +358,42 @@ describe('array insertions and removals', () => {
     expect(map.toJSON()).toEqual(binder.get());
   });
 
+  test('should sync an object that the array holds at several indices', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const shared = { value: 1 };
+    const patches: Patch[] = [];
+    const binder = createBinder<{ list: Array<{ value: number }> }>(
+      map,
+      { list: [shared, shared] },
+      {
+        applyPatch: (target, patch, applyPatch) => {
+          patches.push(patch);
+          applyPatch(target, patch);
+        },
+      }
+    );
+    const remoteDoc = new Y.Doc();
+    Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+    const remote = bind<{ list: Array<{ value: number }> }>(
+      remoteDoc.getMap('data')
+    );
+    const before = binder.get();
+    patches.length = 0;
+
+    binder.update((state) => {
+      state.list.unshift({ value: 0 });
+      state.list[1].value = 2;
+    });
+    Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+
+    const expected = { list: [{ value: 0 }, { value: 2 }, { value: 1 }] };
+    expect(binder.get()).toEqual(expected);
+    expect(map.toJSON()).toEqual(expected);
+    expect(remote.get()).toEqual(expected);
+    expect(apply(before, patches)).toEqual(expected);
+  });
+
   test('should keep a change that another client makes to a later element', () => {
     const { doc, binder } = prepareListDoc(3);
     const remoteDoc = new Y.Doc();
