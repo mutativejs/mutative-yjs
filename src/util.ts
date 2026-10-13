@@ -14,37 +14,41 @@ export function isJSONObject(v: JSONValue): v is JSONObject {
     return v !== null && !isJSONArray(v) && typeof v === 'object'
 }
 
-export function toYDataType(v: JSONValue, seen = new WeakSet<object>()): any {
+// `ancestors` holds the objects above `v`: an object may appear at several
+// places, as in Mutative patch values, which share the next state's objects.
+export function toYDataType(v: JSONValue, ancestors = new WeakSet<object>()): any {
     if (isJSONPrimitive(v)) {
         return v
     } else if (isJSONArray(v)) {
-        if (seen.has(v)) {
+        if (ancestors.has(v)) {
             throw new Error('Circular reference detected in JSON structure')
         }
-        seen.add(v)
+        ancestors.add(v)
         const arr = new Y.Array()
-        applyJsonArray(arr, v, seen)
+        applyJsonArray(arr, v, ancestors)
+        ancestors.delete(v)
         return arr
     } else if (isJSONObject(v)) {
-        if (seen.has(v)) {
+        if (ancestors.has(v)) {
             throw new Error('Circular reference detected in JSON structure')
         }
-        seen.add(v)
+        ancestors.add(v)
         const map = new Y.Map()
-        applyJsonObject(map, v, seen)
+        applyJsonObject(map, v, ancestors)
+        ancestors.delete(v)
         return map
     } else {
         return undefined
     }
 }
 
-export function applyJsonArray(dest: Y.Array<unknown>, source: JSONArray, seen = new WeakSet<object>()) {
-    dest.push(source.map((item) => toYDataType(item, seen)))
+export function applyJsonArray(dest: Y.Array<unknown>, source: JSONArray, ancestors = new WeakSet<object>()) {
+    dest.push(source.map((item) => toYDataType(item, ancestors)))
 }
 
-export function applyJsonObject(dest: Y.Map<unknown>, source: JSONObject, seen = new WeakSet<object>()) {
+export function applyJsonObject(dest: Y.Map<unknown>, source: JSONObject, ancestors = new WeakSet<object>()) {
     Object.entries(source).forEach(([k, v]) => {
-        dest.set(k, toYDataType(v, seen))
+        dest.set(k, toYDataType(v, ancestors))
     })
 }
 

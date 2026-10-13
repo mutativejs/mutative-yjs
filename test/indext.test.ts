@@ -677,6 +677,57 @@ describe('edge cases', () => {
       });
     }).toThrow('Circular reference detected');
   });
+
+  test('should copy an object that a value holds at several places', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<any>(map);
+
+    const shared = { value: 1 };
+
+    binder.update((state) => {
+      state.data = { a: shared, b: [shared, shared] };
+    });
+
+    expect(binder.get()).toEqual({
+      data: { a: { value: 1 }, b: [{ value: 1 }, { value: 1 }] },
+    });
+    expect(map.toJSON()).toEqual(binder.get());
+
+    const data = map.get('data') as Y.Map<any>;
+    expect(data.get('a')).not.toBe(data.get('b').get(0));
+    expect(data.get('b').get(0)).not.toBe(data.get('b').get(1));
+  });
+
+  test('should accept patch values that share objects of the next state', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    type State = {
+      x: { value: number; p?: { value: number }; q?: { value: number } };
+      y: { value: number };
+      z: State['x'] | null;
+    };
+    const binder = createBinder<State>(map, {
+      x: { value: 1 },
+      y: { value: 2 },
+      z: null,
+    });
+
+    // The patch of `z` holds the next `x`, whose `p` and `q` are one object.
+    binder.update((state) => {
+      state.x.p = state.y;
+      state.x.q = state.y;
+      state.z = state.x;
+    });
+
+    const expected = {
+      x: { value: 1, p: { value: 2 }, q: { value: 2 } },
+      y: { value: 2 },
+      z: { value: 1, p: { value: 2 }, q: { value: 2 } },
+    };
+    expect(binder.get()).toEqual(expected);
+    expect(map.toJSON()).toEqual(expected);
+  });
 });
 
 describe('createBinder helper', () => {
