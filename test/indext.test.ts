@@ -1581,6 +1581,30 @@ describe('error handling', () => {
     expect(snapshots).toEqual([{ a: 1 }]);
   });
 
+  test('should notify subscribers when Yjs throws after applying the update', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = bind<{ x?: number }>(map);
+
+    const snapshots: Array<{ x?: number }> = [];
+    binder.subscribe((snapshot) => {
+      snapshots.push(snapshot);
+    });
+    doc.on('update', () => {
+      throw new Error('failed update handler');
+    });
+
+    expect(() => {
+      binder.update((state) => {
+        state.x = 1;
+      });
+    }).toThrow('failed update handler');
+
+    expect(binder.get()).toEqual({ x: 1 });
+    expect(map.toJSON()).toEqual({ x: 1 });
+    expect(snapshots).toEqual([{ x: 1 }]);
+  });
+
   test('should keep the snapshot when the recipe throws', () => {
     const doc = new Y.Doc();
     const map = doc.getMap('data');

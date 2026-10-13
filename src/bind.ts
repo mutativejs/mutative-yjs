@@ -704,6 +704,7 @@ export function bind<S extends Snapshot>(
         (doc as unknown as { _transaction: Y.Transaction | null })
           ._transaction !== null;
 
+      const previousSnapshot = snapshot;
       try {
         Y.transact(
           doc,
@@ -714,9 +715,8 @@ export function bind<S extends Snapshot>(
           MUTATIVE_YJS_ORIGIN
         );
       } catch (error) {
-        // Yjs keeps the patches applied before the error, so read the
-        // snapshot back from Yjs to stay in sync with it.
-        const previousSnapshot = snapshot;
+        // Yjs keeps the patches applied before the error, which may also come
+        // from Yjs after all of them, so read the snapshot back from Yjs.
         reconcileSnapshotFromSource();
         if (!isNestedTransaction && snapshot !== previousSnapshot) {
           subscription.forEach((fn) => fn(get()));
