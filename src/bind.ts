@@ -147,11 +147,17 @@ function nullifyArrayItems<T extends JSONValue>(
 
   if (isJSONArray(value)) {
     const previousArray = Array.isArray(previous) ? previous : undefined;
+    // Elements that only moved are skipped as well.
+    const previousItems = previousArray && new Set<JSONValue>(previousArray);
     let copy: JSONArray | undefined;
     for (let i = 0; i < value.length; i++) {
       const item = value[i];
       const next =
-        item === undefined ? null : nullifyArrayItems(item, previousArray?.[i]);
+        item === undefined
+          ? null
+          : previousItems?.has(item)
+            ? item
+            : nullifyArrayItems(item, previousArray?.[i]);
       if (next !== item) {
         copy ??= value.slice();
         copy[i] = next;
