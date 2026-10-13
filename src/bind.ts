@@ -510,13 +510,16 @@ function applyUpdate<S extends Snapshot>(
   applyPatch: typeof defaultApplyPatch,
   patchesOptions: PatchesOptions
 ): S {
-  // Array paths, which toYjsPatches() reads, are turned into strings after.
+  // Array paths, which toYjsPatches() reads, are turned into strings for a
+  // custom applyPatch only.
   const [nextState, patches] = create(snapshot, fn, {
     enablePatches:
       patchesOptions === true ? true : { ...patchesOptions, pathAsArray: true },
   });
   const hasStringPaths =
-    patchesOptions !== true && patchesOptions?.pathAsArray === false;
+    applyPatch !== defaultApplyPatch &&
+    patchesOptions !== true &&
+    patchesOptions?.pathAsArray === false;
   let hasUndefinedArrayItems = false;
   for (const patch of toYjsPatches(patches, snapshot, nextState)) {
     hasUndefinedArrayItems ||= writesUndefinedArrayItem(patch);

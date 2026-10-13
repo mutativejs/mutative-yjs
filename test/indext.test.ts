@@ -1472,6 +1472,24 @@ describe('options and configuration', () => {
     expect(paths).toContain('/list/0/id');
   });
 
+  test('should apply updates with pathAsArray: false and no custom applyPatch', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<any>(
+      map,
+      { 'a/b': { list: [1, 2, 3] } },
+      { patchesOptions: { pathAsArray: false } }
+    );
+
+    binder.update((state) => {
+      state['a/b'].list.shift();
+      state['a/b'].list.push(4);
+    });
+
+    expect(binder.get()).toEqual({ 'a/b': { list: [2, 3, 4] } });
+    expect(map.toJSON()).toEqual(binder.get());
+  });
+
   test('should work with detached Y.Map (no document initially)', () => {
     // Create Y.Map, then attach to document
     const doc = new Y.Doc();
