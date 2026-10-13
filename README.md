@@ -118,6 +118,8 @@ binder.unbind();
 
 `Y.Array` cannot hold `undefined`, so `undefined` array elements and holes are written to Y.js as `null`, as `JSON.stringify()` writes them.
 
+A `__proto__` key of a `Y.Map` becomes an own property of the snapshot object, as `JSON.parse()` makes it, and never replaces the prototype of the object.
+
 `Y.XmlElement` & `Y.Text` have no equivalent to JSON data types, so they are not supported by default. If you want to use them, please use the Y.js top-level type (e.g. `doc.getText("xxx")`) directly, or see **Customize binding & schema** section below.
 
 ## Demo

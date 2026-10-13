@@ -859,6 +859,96 @@ describe('edge cases', () => {
   });
 });
 
+describe('__proto__ keys', () => {
+  const hasOwn = (object: object, key: string) =>
+    Object.prototype.hasOwnProperty.call(object, key);
+
+  test('should read a __proto__ key from Yjs as an own property', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const nested = new Y.Map();
+    nested.set('__proto__', 'value');
+    map.set('nested', nested);
+
+    const binder = bind<any>(map);
+
+    expect(hasOwn(binder.get().nested, '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(binder.get().nested)).toBe(Object.prototype);
+    expect(binder.get()).toEqual(
+      JSON.parse('{ "nested": { "__proto__": "value" } }')
+    );
+  });
+
+  test('should sync a __proto__ key that Yjs adds, changes and deletes', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<any>(map, { nested: { value: 1 } });
+
+    let callCount = 0;
+    binder.subscribe(() => {
+      callCount++;
+    });
+
+    const nested = map.get('nested') as Y.Map<any>;
+    nested.set('__proto__', { polluted: true });
+
+    expect(callCount).toBe(1);
+    expect(hasOwn(binder.get().nested, '__proto__')).toBe(true);
+    expect(binder.get().nested.polluted).toBeUndefined();
+    expect(({} as any).polluted).toBeUndefined();
+    expect(binder.get()).toEqual(
+      JSON.parse(
+        '{ "nested": { "value": 1, "__proto__": { "polluted": true } } }'
+      )
+    );
+
+    nested.set('__proto__', 2);
+    expect(binder.get().nested['__proto__']).toBe(2);
+
+    nested.delete('__proto__');
+    expect(binder.get()).toEqual({ nested: { value: 1 } });
+    expect(callCount).toBe(3);
+  });
+
+  test('should sync a __proto__ key that Yjs adds to the bound map', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<any>(map, { unchanged: { value: 1 } });
+
+    map.set('__proto__', 1);
+
+    expect(hasOwn(binder.get(), '__proto__')).toBe(true);
+    expect(binder.get()).toEqual(
+      JSON.parse('{ "unchanged": { "value": 1 }, "__proto__": 1 }')
+    );
+  });
+
+  test('should update a snapshot that holds a __proto__ key', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<any>(map, { nested: { value: 1 } });
+    const proto = new Y.Map();
+    proto.set('count', 1);
+    (map.get('nested') as Y.Map<any>).set('__proto__', proto);
+
+    binder.update((state) => {
+      state.nested['__proto__'].count = 2;
+      state.nested.value = 2;
+    });
+
+    const expected = JSON.parse(
+      '{ "nested": { "value": 2, "__proto__": { "count": 2 } } }'
+    );
+    expect(binder.get()).toEqual(expected);
+    expect(map.toJSON().nested.value).toBe(2);
+    expect(
+      ((map.get('nested') as Y.Map<any>).get('__proto__') as Y.Map<any>).get(
+        'count'
+      )
+    ).toBe(2);
+  });
+});
+
 describe('undefined array elements', () => {
   function prepareArrayDoc(...items: number[]) {
     const doc = new Y.Doc();

@@ -28,6 +28,10 @@ function applyYEvent<T extends JSONValue>(base: T, event: Y.YEvent<any>) {
       switch (change.action) {
         case 'add':
         case 'update':
+          if (key === '__proto__' && change.action === 'add') {
+            // Assigning a new `__proto__` key sets the prototype instead.
+            notImplemented('Cannot add a __proto__ key to a draft');
+          }
           base[key] = toPlainValue(source.get(key));
           break;
         case 'delete':
@@ -334,7 +338,7 @@ export function bind<S extends Snapshot>(
   source: Y.Map<any> | Y.Array<any>,
   options?: Options<S>
 ): Binder<S> {
-  let snapshot = source.toJSON() as S;
+  let snapshot = toPlainValue(source) as S;
   const binder = {};
   const skippedOrigins = normalizeSkippedOrigins(options?.skippedOrigins);
 
@@ -351,7 +355,7 @@ export function bind<S extends Snapshot>(
   };
 
   const reconcileSnapshotFromSource = () => {
-    const nextSnapshot = source.toJSON() as S;
+    const nextSnapshot = toPlainValue(source) as S;
     if (!isJSONEqual(snapshot, nextSnapshot)) {
       snapshot = nextSnapshot;
     }
@@ -374,7 +378,13 @@ export function bind<S extends Snapshot>(
       return;
     }
 
-    snapshot = applyYEvents(get(), events);
+    try {
+      snapshot = applyYEvents(get(), events);
+    } catch {
+      // A change that a draft cannot take, such as a new `__proto__` key,
+      // is read from the final Yjs state instead.
+      reconcileSnapshotFromSource();
+    }
     subscription.forEach((fn) => fn(get()));
   };
 

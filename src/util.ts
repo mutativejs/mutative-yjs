@@ -59,9 +59,28 @@ export function applyJsonObject(dest: Y.Map<unknown>, source: JSONObject, ancest
     })
 }
 
-export function toPlainValue(v: Y.Map<any> | Y.Array<any> | JSONValue) {
-    if (v instanceof Y.Map || v instanceof Y.Array) {
-        return v.toJSON() as JSONObject | JSONArray
+// Like toJSON() of Yjs types, except that a `__proto__` key becomes an own
+// property, as JSON.parse() makes it, instead of replacing the prototype.
+export function toPlainValue(v: Y.Map<any> | Y.Array<any> | JSONValue): JSONValue {
+    if (v instanceof Y.Map) {
+        const object: JSONObject = {}
+        v.forEach((value, key) => {
+            if (key === '__proto__') {
+                Object.defineProperty(object, key, {
+                    value: toPlainValue(value),
+                    writable: true,
+                    enumerable: true,
+                    configurable: true,
+                })
+            } else {
+                object[key] = toPlainValue(value)
+            }
+        })
+        return object
+    } else if (v instanceof Y.Array) {
+        return v.map(toPlainValue)
+    } else if (v instanceof Y.AbstractType) {
+        return v.toJSON()
     } else {
         return v
     }
