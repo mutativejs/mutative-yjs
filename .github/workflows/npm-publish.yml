@@ -9,16 +9,18 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20.x'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-      - run: yarn
+          package-manager-cache: false
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@latest
+      - run: yarn install --frozen-lockfile
       - run: yarn build
       - run: yarn test
-      - run: npm publish --provenance
+      - run: yarn test:production
+      - run: npm publish
         env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_AUTH_TOKEN}}
           CI: true
-
