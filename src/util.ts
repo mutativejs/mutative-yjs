@@ -42,8 +42,15 @@ export function toYDataType(v: JSONValue, ancestors = new WeakSet<object>()): an
     }
 }
 
+// Y.Array cannot hold `undefined`, so `undefined` elements and holes are
+// written as `null`, as JSON.stringify() writes them.
+export function toYArrayItem(v: JSONValue, ancestors?: WeakSet<object>): any {
+    const item = toYDataType(v, ancestors)
+    return item === undefined ? null : item
+}
+
 export function applyJsonArray(dest: Y.Array<unknown>, source: JSONArray, ancestors = new WeakSet<object>()) {
-    dest.push(source.map((item) => toYDataType(item, ancestors)))
+    dest.push(Array.from(source, (item) => toYArrayItem(item, ancestors)))
 }
 
 export function applyJsonObject(dest: Y.Map<unknown>, source: JSONObject, ancestors = new WeakSet<object>()) {

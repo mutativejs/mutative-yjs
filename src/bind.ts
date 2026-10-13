@@ -2,10 +2,12 @@ import { type Patch, create } from 'mutative';
 import * as Y from 'yjs';
 import { JSONArray, JSONObject, JSONValue } from './types';
 import {
+  applyJsonArray,
   isJSONArray,
   isJSONObject,
   notImplemented,
   toPlainValue,
+  toYArrayItem,
   toYDataType,
 } from './util';
 
@@ -114,7 +116,7 @@ function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
       }
     } else if (target instanceof Y.Array && isJSONArray(value)) {
       target.delete(0, target.length);
-      target.push(value.map((v) => toYDataType(v)));
+      applyJsonArray(target, value);
     } else {
       notImplemented(
         `Cannot replace root of type ${target.constructor.name} with value type ${typeof value}`
@@ -145,7 +147,7 @@ function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
   } else if (base instanceof Y.Array && typeof property === 'number') {
     switch (op) {
       case PATCH_ADD:
-        base.insert(property, [toYDataType(value)]);
+        base.insert(property, [toYArrayItem(value)]);
         break;
       case PATCH_REPLACE:
         // If both old and new values are objects, try incremental update
@@ -160,7 +162,7 @@ function defaultApplyPatch(target: Y.Map<any> | Y.Array<any>, patch: Patch) {
         } else {
           // For primitives or type changes, do full replacement
           base.delete(property, 1);
-          base.insert(property, [toYDataType(value)]);
+          base.insert(property, [toYArrayItem(value)]);
         }
         break;
       case PATCH_REMOVE:

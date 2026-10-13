@@ -730,6 +730,70 @@ describe('edge cases', () => {
   });
 });
 
+describe('undefined array elements', () => {
+  function prepareArrayDoc(...items: number[]) {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<{ array: Array<number | null> }>(map, {
+      array: items,
+    });
+    const observer = bind<{ array: Array<number | null> }>(map);
+    return { map, binder, observer };
+  }
+
+  test('should write indices that an array regains after shrinking as null', () => {
+    const { map, binder, observer } = prepareArrayDoc(1, 2, 3);
+
+    binder.update((data) => {
+      data.array.length = 1;
+      data.array.length = 3;
+    });
+
+    expect(binder.get().array).toHaveLength(3);
+    expect(binder.get().array[0]).toBe(1);
+    expect(map.toJSON()).toEqual({ array: [1, null, null] });
+    expect(observer.get()).toEqual({ array: [1, null, null] });
+  });
+
+  test('should write holes of an array that grows by assignment as null', () => {
+    const { map, binder, observer } = prepareArrayDoc(1);
+
+    binder.update((data) => {
+      data.array[3] = 4;
+    });
+
+    expect(binder.get().array).toHaveLength(4);
+    expect(map.toJSON()).toEqual({ array: [1, null, null, 4] });
+    expect(observer.get()).toEqual({ array: [1, null, null, 4] });
+  });
+
+  test('should write deleted and undefined elements as null', () => {
+    const { map, binder, observer } = prepareArrayDoc(1, 2, 3);
+
+    binder.update((data) => {
+      delete data.array[0];
+      data.array[1] = undefined as any;
+      data.array.push(undefined as any);
+    });
+
+    expect(binder.get().array).toHaveLength(4);
+    expect(map.toJSON()).toEqual({ array: [null, null, 3, null] });
+    expect(observer.get()).toEqual({ array: [null, null, 3, null] });
+  });
+
+  test('should write the holes of an assigned array as null', () => {
+    const { map, binder, observer } = prepareArrayDoc();
+
+    binder.update((data) => {
+      data.array = [1, , 3] as any;
+    });
+
+    expect(binder.get().array).toHaveLength(3);
+    expect(map.toJSON()).toEqual({ array: [1, null, 3] });
+    expect(observer.get()).toEqual({ array: [1, null, 3] });
+  });
+});
+
 describe('createBinder helper', () => {
   test('should create binder with initial state', () => {
     const doc = new Y.Doc();
