@@ -37,8 +37,10 @@ export function toYDataType(v: JSONValue, ancestors = new WeakSet<object>()): an
         applyJsonObject(map, v, ancestors)
         ancestors.delete(v)
         return map
-    } else {
+    } else if (v === undefined) {
         return undefined
+    } else {
+        throw new Error(`Unsupported value type: ${typeof v}`)
     }
 }
 

@@ -1079,6 +1079,27 @@ describe('edge cases', () => {
     }).toThrow('Circular reference detected');
   });
 
+  test('should reject values that JSON cannot hold', () => {
+    const doc = new Y.Doc();
+    const map = doc.getMap('data');
+    const binder = createBinder<any>(map, { list: [1] });
+    const before = binder.get();
+
+    expect(() => {
+      binder.update((state) => {
+        state.list.push(BigInt(2));
+      });
+    }).toThrow('Unsupported value type: bigint');
+    expect(() => {
+      binder.update((state) => {
+        state.fn = () => {};
+      });
+    }).toThrow('Unsupported value type: function');
+
+    expect(binder.get()).toBe(before);
+    expect(map.toJSON()).toEqual({ list: [1] });
+  });
+
   test('should copy an object that a value holds at several places', () => {
     const doc = new Y.Doc();
     const map = doc.getMap('data');
