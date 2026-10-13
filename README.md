@@ -116,6 +116,8 @@ binder.unbind();
 
 `Y.Map` binds to plain object `{}`, `Y.Array` binds to plain array `[]`, and any level of nested `Y.Map`/`Y.Array` binds to nested plain JSON object/array respectively.
 
+`Y.Array` cannot hold `undefined`, so `undefined` array elements and holes are written to Y.js as `null`, as `JSON.stringify()` writes them.
+
 `Y.XmlElement` & `Y.Text` have no equivalent to JSON data types, so they are not supported by default. If you want to use them, please use the Y.js top-level type (e.g. `doc.getText("xxx")`) directly, or see **Customize binding & schema** section below.
 
 ## Demo
