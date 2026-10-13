@@ -30,10 +30,6 @@ function applyYEvent<T extends JSONValue>(base: T, event: Y.YEvent<any>) {
       switch (change.action) {
         case 'add':
         case 'update':
-          if (key === '__proto__' && change.action === 'add') {
-            // Assigning a new `__proto__` key sets the prototype instead.
-            notImplemented('Cannot add a __proto__ key to a draft');
-          }
           base[key] = toPlainValue(source.get(key));
           break;
         case 'delete':
@@ -62,6 +58,14 @@ function applyYEvent<T extends JSONValue>(base: T, event: Y.YEvent<any>) {
       }
     });
   }
+}
+
+// Assigning a new `__proto__` key to a draft sets its prototype instead.
+function addsProtoKey(event: Y.YEvent<any>) {
+  return (
+    event instanceof Y.YMapEvent &&
+    event.changes.keys.get('__proto__')?.action === 'add'
+  );
 }
 
 function applyYEvents<S extends Snapshot>(
@@ -691,12 +695,11 @@ export function bind<S extends Snapshot>(
       return;
     }
 
-    try {
-      snapshot = applyYEvents(get(), events);
-    } catch {
-      // A change that a draft cannot take, such as a new `__proto__` key,
-      // is read from the final Yjs state instead.
+    if (events.some(addsProtoKey)) {
+      // A draft cannot take a new `__proto__` key, so read it from Yjs.
       reconcileSnapshotFromSource();
+    } else {
+      snapshot = applyYEvents(get(), events);
     }
     subscription.forEach((fn) => fn(get()));
   };
